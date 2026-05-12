@@ -2,13 +2,22 @@
 	const techStack = [
 		{ name: 'SvelteKit', desc: 'Framework & routing', color: '#ff6b35' },
 		{ name: 'TypeScript', desc: 'Type safety', color: '#3178c6' },
-		{ name: 'Canvas API', desc: 'Image rendering & compression', color: '#6c63ff' },
-		{ name: 'OffscreenCanvas', desc: 'Off-main-thread rendering', color: '#6c63ff' },
-		{ name: 'WebCodecs', desc: 'Hardware-accelerated video', color: '#00e5ff' },
-		{ name: 'MediaRecorder', desc: 'Video fallback encoding', color: '#00e5ff' },
-		{ name: 'PDF.js', desc: 'PDF parsing & page rendering', color: '#ff6b6b' },
-		{ name: 'Vite', desc: 'Build tool & dev server', color: '#bd34fe' },
+		{ name: 'Plus Jakarta Sans', desc: 'UI typography', color: '#3b5bdb' },
+		{ name: 'Canvas API', desc: 'Image rendering & compression', color: '#2f9e44' },
+		{ name: 'OffscreenCanvas', desc: 'Off-main-thread rendering', color: '#2f9e44' },
+		{ name: 'WebCodecs', desc: 'Hardware-accelerated video', color: '#0c8599' },
+		{ name: 'MediaRecorder', desc: 'Video fallback encoding', color: '#0c8599' },
+		{ name: 'PDF.js', desc: 'PDF parsing & page rendering', color: '#e03131' },
+		{ name: 'Vite', desc: 'Build tool', color: '#bd34fe' },
+		{ name: 'adapter-static', desc: 'Static site export', color: '#ff6b35' },
 		{ name: 'Cloudflare Pages', desc: 'Hosting & CDN', color: '#f38020' },
+	];
+
+	const limitations = [
+		'Video output via WebCodecs is raw H.264 — a proper MP4 muxer (mp4box.js) is planned for v1.',
+		'Large PDFs (100+ pages) may be slow; Web Worker offloading is planned.',
+		'AVIF encoding requires Chrome 94+ or Safari 16+. Firefox encodes as WebP instead.',
+		'Batch download is sequential — ZIP bundling is planned for v1.',
 	];
 </script>
 
@@ -18,158 +27,230 @@
 
 <div class="about-page">
 	<div class="about-inner">
-		<section class="about-hero">
-			<h1>About Compressly</h1>
+
+		<div class="page-hero">
+			<div class="section-label">About</div>
+			<h1>Built for privacy,<br>not convenience.</h1>
 			<p class="lead">
-				A fast, private, browser-native file compressor. No backend. No cloud.
-				Every byte stays on your device.
+				Most compression tools upload your files to a server, process them remotely, and send them back.
+				Compressly doesn't. Everything runs inside your browser tab using native browser APIs — no server,
+				no upload, no account.
 			</p>
-		</section>
+		</div>
 
-		<section class="section">
-			<h2>Why browser-native?</h2>
-			<p>
-				Traditional file compression services upload your files to servers. That means your private photos,
-				confidential PDFs, and personal videos travel across the internet before you get a compressed version.
-			</p>
-			<p>
-				Compressly does all the work locally using APIs built into modern browsers —
-				the same Canvas API that powers browser games, the WebCodecs API used by video editors,
-				and OffscreenCanvas for GPU-accelerated rendering. The result is compression that is fast,
-				private, and completely free.
-			</p>
-		</section>
+		<div class="content">
 
-		<section class="section">
-			<h2>Hardware acceleration</h2>
-			<p>
-				On supported browsers (Chrome 94+, Safari 16.4+, Edge 94+), video compression uses the
-				<strong>WebCodecs API</strong> which routes encoding to the device's GPU or dedicated video
-				hardware. On older browsers, <strong>MediaRecorder</strong> is used as a fallback.
-			</p>
-			<p>
-				Image compression uses <strong>OffscreenCanvas</strong> where available, which moves pixel
-				operations off the main thread and can leverage GPU compositing.
-			</p>
-		</section>
+			<section class="content-section">
+				<h2>Why browser-native?</h2>
+				<p>
+					When you compress a file on a typical web service, that file travels across the internet
+					before you ever see a smaller version. That's fine for a stock photo — less fine for a
+					confidential PDF, a personal photo, or a sensitive document.
+				</p>
+				<p>
+					Compressly uses the same Canvas API that powers browser games, the WebCodecs API used
+					by professional video editors, and OffscreenCanvas for GPU-accelerated rendering. The
+					result is fast, private compression that works on any modern device.
+				</p>
+			</section>
 
-		<section class="section">
-			<h2>How each format is handled</h2>
-			<div class="format-list">
-				<div class="format-item">
-					<div class="fi-header">
-						<span class="fi-icon">🖼️</span>
-						<strong>Images (JPEG, PNG, WebP, AVIF)</strong>
+			<section class="content-section">
+				<h2>Hardware acceleration</h2>
+				<p>
+					On Chrome 94+, Safari 16.4+, and Edge 94+, video compression uses the <strong>WebCodecs API</strong>
+					which routes encoding to the device's GPU or dedicated video encoder chip. This makes it
+					significantly faster than software encoding, especially on mobile devices with dedicated
+					media engines.
+				</p>
+				<p>
+					Image compression uses <strong>OffscreenCanvas</strong> where available — moving pixel
+					operations off the main thread so the UI stays responsive during compression.
+				</p>
+			</section>
+
+			<section class="content-section">
+				<h2>How each format works</h2>
+
+				<div class="format-cards">
+					<div class="format-card">
+						<div class="format-header">
+							<span class="format-emoji">🖼️</span>
+							<div>
+								<strong>Images</strong>
+								<span class="format-types">JPEG · PNG · WebP · AVIF</span>
+							</div>
+						</div>
+						<p>
+							Images are decoded into a GPU bitmap via <code>createImageBitmap()</code>, drawn
+							onto a canvas at the target dimensions, then re-encoded in the chosen format.
+							In target-size mode, a binary search across quality values finds the optimal
+							setting in ≤12 iterations.
+						</p>
 					</div>
-					<p>
-						Images are decoded into a bitmap via <code>createImageBitmap()</code>, drawn onto a
-						canvas at the target dimensions, then re-encoded in the chosen output format.
-						For target-size mode, a binary search across quality values (0–100) finds the
-						optimal setting within ~12 iterations.
-					</p>
+
+					<div class="format-card">
+						<div class="format-header">
+							<span class="format-emoji">📄</span>
+							<div>
+								<strong>PDFs</strong>
+								<span class="format-types">PDF 1.4</span>
+							</div>
+						</div>
+						<p>
+							PDF files are loaded with <strong>PDF.js</strong> (loaded from CDN on first use).
+							Each page is rendered at 1.5× scale to a canvas, saved as a compressed JPEG,
+							then reassembled into a valid PDF using a hand-built minimal PDF container
+							with embedded image XObjects.
+						</p>
+					</div>
+
+					<div class="format-card">
+						<div class="format-header">
+							<span class="format-emoji">🎬</span>
+							<div>
+								<strong>Video</strong>
+								<span class="format-types">MP4 · WebM</span>
+							</div>
+						</div>
+						<p>
+							With WebCodecs available, frames are decoded and re-encoded with H.264 at
+							a target bitrate — hardware acceleration is requested from the browser. Without
+							WebCodecs, the video plays into a canvas stream captured by <strong>MediaRecorder</strong>
+							at the target bitrate.
+						</p>
+					</div>
 				</div>
-				<div class="format-item">
-					<div class="fi-header">
-						<span class="fi-icon">📄</span>
-						<strong>PDFs</strong>
-					</div>
-					<p>
-						PDF files are loaded with <strong>PDF.js</strong>, each page rendered at 1.5x scale
-						to a canvas, then saved as a compressed JPEG. A minimal hand-crafted PDF container
-						wraps all pages back into a valid PDF file with embedded image XObjects.
-					</p>
-				</div>
-				<div class="format-item">
-					<div class="fi-header">
-						<span class="fi-icon">🎬</span>
-						<strong>Video (MP4, WebM)</strong>
-					</div>
-					<p>
-						With <strong>WebCodecs</strong>, video frames are decoded, re-encoded with
-						H.264/VP9 at the target bitrate, and hardware acceleration is requested from
-						the browser. Without WebCodecs, the video plays into a canvas stream which is
-						captured by <strong>MediaRecorder</strong> at the target bitrate.
-					</p>
-				</div>
-			</div>
-		</section>
+			</section>
 
-		<section class="section">
-			<h2>Tech stack</h2>
-			<div class="tech-grid">
-				{#each techStack as tech}
-					<div class="tech-item" style="--c: {tech.color}">
-						<div class="tech-name">{tech.name}</div>
-						<div class="tech-desc">{tech.desc}</div>
-					</div>
-				{/each}
-			</div>
-		</section>
+			<section class="content-section">
+				<h2>Tech stack</h2>
+				<div class="tech-grid">
+					{#each techStack as t}
+						<div class="tech-chip" style="--c: {t.color}">
+							<span class="tech-dot" style="background:{t.color}"></span>
+							<div>
+								<div class="tech-name">{t.name}</div>
+								<div class="tech-desc">{t.desc}</div>
+							</div>
+						</div>
+					{/each}
+				</div>
+			</section>
 
-		<section class="section">
-			<h2>Alpha status</h2>
-			<p>
-				This is <strong>Draft 1 Alpha</strong>. The core compression pipeline works, but there are
-				known limitations:
-			</p>
-			<ul class="limitation-list">
-				<li>Video output via WebCodecs is raw H.264 without a proper MP4 container muxer (planned: mp4box.js integration)</li>
-				<li>Very large PDFs (100+ pages) may be slow without Web Worker offloading</li>
-				<li>AVIF encoding support depends on browser (Chrome 94+ only)</li>
-				<li>Batch download is sequential — a ZIP bundler is planned for v1</li>
-			</ul>
-		</section>
+			<section class="content-section">
+				<h2>Known limitations — Alpha</h2>
+				<p>This is Draft 1 Alpha. The core pipeline works well, but these rough edges remain:</p>
+				<ul class="limit-list">
+					{#each limitations as l}
+						<li>{l}</li>
+					{/each}
+				</ul>
+			</section>
+
+		</div>
 
 		<div class="cta-row">
-			<a href="/compress" class="btn-accent">Open the Compressor</a>
+			<a href="/compress" class="btn-primary">Open the compressor</a>
+			<a href="/" class="btn-ghost">Back to home</a>
 		</div>
+
 	</div>
 </div>
 
 <style>
-	.about-page { padding: 4rem 2rem; }
-	.about-inner { max-width: 760px; margin: 0 auto; }
-	.about-hero { margin-bottom: 3.5rem; }
-	.about-hero h1 { font-size: 2.5rem; font-weight: 800; letter-spacing: -0.03em; margin-bottom: 1rem; }
-	.lead { font-size: 1.15rem; color: var(--text-dim); line-height: 1.7; }
-	.section { margin-bottom: 3rem; padding-bottom: 3rem; border-bottom: 1px solid var(--border); }
-	.section h2 { font-size: 1.4rem; font-weight: 700; margin-bottom: 1rem; }
-	.section p { color: var(--text-dim); line-height: 1.8; margin-bottom: 0.75rem; font-size: 0.95rem; }
-	.section strong { color: var(--text); }
-	.section code {
-		font-family: var(--mono); font-size: 0.85em;
-		background: var(--surface); padding: 0.15em 0.4em; border-radius: 4px;
-		color: var(--accent3);
-	}
-	.format-list { display: flex; flex-direction: column; gap: 1.5rem; }
-	.format-item {
-		padding: 1.5rem; background: var(--bg2);
-		border: 1px solid var(--border); border-radius: var(--radius);
-	}
-	.fi-header { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.75rem; font-size: 1rem; }
-	.fi-icon { font-size: 1.4rem; }
-	.fi-header strong { color: var(--text); }
-	.format-item p { margin: 0; font-size: 0.875rem; }
+	.about-page { padding: 4rem 2rem 5rem; }
+	.about-inner { max-width: 740px; margin: 0 auto; }
 
-	.tech-grid { display: flex; flex-wrap: wrap; gap: 0.75rem; }
-	.tech-item {
-		padding: 0.6rem 1rem; background: var(--bg2);
+	.page-hero { margin-bottom: 3.5rem; }
+	.section-label {
+		font-size: 0.78rem; font-family: var(--mono); color: var(--accent);
+		font-weight: 500; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 0.75rem;
+	}
+	.page-hero h1 {
+		font-size: clamp(2rem, 5vw, 3rem); font-weight: 800;
+		letter-spacing: -0.03em; color: var(--text); line-height: 1.1; margin-bottom: 1.25rem;
+	}
+	.lead { font-size: 1.05rem; color: var(--text-3); line-height: 1.8; }
+
+	.content { display: flex; flex-direction: column; gap: 0; }
+
+	.content-section {
+		padding: 2.5rem 0;
+		border-bottom: 1px solid var(--border);
+	}
+	.content-section:last-child { border-bottom: none; }
+
+	.content-section h2 {
+		font-size: 1.2rem; font-weight: 700; color: var(--text);
+		letter-spacing: -0.015em; margin-bottom: 1rem;
+	}
+	.content-section p {
+		font-size: 0.925rem; color: var(--text-3); line-height: 1.8;
+		margin-bottom: 0.85rem;
+	}
+	.content-section p:last-child { margin-bottom: 0; }
+	.content-section strong { color: var(--text-2); font-weight: 600; }
+	.content-section code {
+		font-family: var(--mono); font-size: 0.83em;
+		background: var(--bg2); border: 1px solid var(--border);
+		padding: 0.15em 0.45em; border-radius: 5px; color: var(--accent3);
+	}
+
+	/* FORMAT CARDS */
+	.format-cards { display: flex; flex-direction: column; gap: 0.85rem; margin-top: 1.25rem; }
+	.format-card {
+		padding: 1.4rem 1.5rem; background: var(--surface);
+		border: 1px solid var(--border); border-radius: var(--radius-lg);
+	}
+	.format-header {
+		display: flex; align-items: center; gap: 0.85rem; margin-bottom: 0.85rem;
+	}
+	.format-emoji { font-size: 1.5rem; flex-shrink: 0; }
+	.format-header strong { font-size: 0.95rem; font-weight: 700; color: var(--text); display: block; }
+	.format-types {
+		font-size: 0.75rem; font-family: var(--mono); color: var(--text-4); margin-top: 0.15rem;
+	}
+	.format-card p { font-size: 0.875rem; margin: 0; }
+
+	/* TECH GRID */
+	.tech-grid {
+		display: flex; flex-wrap: wrap; gap: 0.6rem; margin-top: 1rem;
+	}
+	.tech-chip {
+		display: flex; align-items: center; gap: 0.55rem;
+		padding: 0.5rem 0.85rem; background: var(--surface);
 		border: 1px solid var(--border); border-radius: 8px;
-		border-left: 3px solid var(--c, var(--accent));
 	}
-	.tech-name { font-size: 0.875rem; font-weight: 700; color: var(--text); }
-	.tech-desc { font-size: 0.75rem; color: var(--text-dimmer); font-family: var(--mono); }
+	.tech-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+	.tech-name { font-size: 0.82rem; font-weight: 600; color: var(--text); }
+	.tech-desc { font-size: 0.72rem; font-family: var(--mono); color: var(--text-4); margin-top: 0.1rem; }
 
-	.limitation-list {
-		padding-left: 1.25rem; display: flex; flex-direction: column; gap: 0.5rem;
+	/* LIMITATIONS */
+	.limit-list {
+		margin-top: 0.85rem; padding-left: 1.1rem;
+		display: flex; flex-direction: column; gap: 0.6rem;
 	}
-	.limitation-list li { font-size: 0.875rem; color: var(--text-dim); line-height: 1.6; }
+	.limit-list li { font-size: 0.875rem; color: var(--text-3); line-height: 1.65; }
 
-	.cta-row { display: flex; justify-content: center; padding-top: 1rem; }
-	.btn-accent {
-		padding: 0.85rem 2.2rem; background: var(--accent); color: white;
-		border-radius: var(--radius); font-weight: 700; font-size: 1rem;
+	/* CTA */
+	.cta-row {
+		display: flex; gap: 0.75rem; align-items: center;
+		padding-top: 3rem; flex-wrap: wrap;
+	}
+	.btn-primary {
+		display: inline-flex; align-items: center; gap: 0.5rem;
+		padding: 0.7rem 1.5rem; background: var(--accent); color: white;
+		border-radius: var(--radius); font-weight: 600; font-size: 0.95rem;
+		border: none; transition: var(--transition);
+		box-shadow: 0 1px 3px rgba(59,91,219,0.25);
+	}
+	.btn-primary:hover { background: var(--accent-mid); box-shadow: 0 4px 14px rgba(59,91,219,0.35); transform: translateY(-1px); }
+	.btn-ghost {
+		display: inline-flex; align-items: center;
+		padding: 0.7rem 1.5rem; background: transparent;
+		border: 1px solid var(--border-mid); color: var(--text-2);
+		border-radius: var(--radius); font-weight: 600; font-size: 0.95rem;
 		transition: var(--transition);
 	}
-	.btn-accent:hover { background: #7d75ff; box-shadow: 0 0 25px var(--accent-glow); }
+	.btn-ghost:hover { border-color: var(--text-3); background: var(--bg2); }
 </style>
