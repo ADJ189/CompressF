@@ -2,123 +2,153 @@
 	const features = [
 		{
 			icon: '🖼️',
-			title: 'Image Compression',
-			desc: 'JPEG, PNG, WebP, AVIF — compress with quality control or target a specific file size. Canvas API + hardware acceleration.',
+			title: 'Images',
+			desc: 'JPEG, PNG, WebP, AVIF. Quality slider or hit an exact target size using smart binary search.',
 			tags: ['JPEG', 'PNG', 'WebP', 'AVIF'],
-			color: '#6c63ff'
+			color: 'var(--accent)'
 		},
 		{
 			icon: '📄',
-			title: 'PDF Optimization',
-			desc: 'Reduce PDF size by re-encoding embedded images and stripping metadata. Keep it readable, cut the bloat.',
-			tags: ['PDF', 'Lossless', 'Metadata'],
-			color: '#ff6b6b'
+			title: 'PDFs',
+			desc: 'Re-encodes embedded pages as compressed images. Keeps everything readable, strips the bulk.',
+			tags: ['PDF', 'Lossless-friendly'],
+			color: '#0c8599'
 		},
 		{
 			icon: '🎬',
-			title: 'Video Encoding',
-			desc: 'Compress MP4/WebM video with target bitrate control. Hardware-accelerated encoding via WebCodecs API where supported.',
-			tags: ['MP4', 'WebM', 'WebCodecs', 'HW Accel'],
-			color: '#00e5ff'
-		},
-		{
-			icon: '🎯',
-			title: 'Target File Size',
-			desc: 'Set an exact target size in KB or MB and we\'ll find the optimal quality setting automatically.',
-			tags: ['Smart', 'Auto-Quality'],
-			color: '#ffd166'
-		},
-		{
-			icon: '🔒',
-			title: '100% Private',
-			desc: 'No file uploads, no servers, no tracking. Every byte stays in your browser tab. Always.',
-			tags: ['Local', 'No Upload', 'Private'],
-			color: '#06d6a0'
-		},
-		{
-			icon: '⚡',
-			title: 'Hardware Accelerated',
-			desc: 'Leverages WebCodecs, OffscreenCanvas, and WebWorkers for GPU-accelerated processing on supported devices.',
-			tags: ['WebWorker', 'OffscreenCanvas', 'GPU'],
-			color: '#ff9a3c'
+			title: 'Video',
+			desc: 'Hardware-accelerated encoding via WebCodecs on Chrome and Safari. MediaRecorder fallback for everyone else.',
+			tags: ['MP4', 'WebM', 'WebCodecs'],
+			color: '#7048e8'
 		}
-	];
-
-	const stats = [
-		{ value: '100%', label: 'Browser-based' },
-		{ value: '0 bytes', label: 'Uploaded to servers' },
-		{ value: '3 types', label: 'File formats' },
-		{ value: '∞', label: 'Files processed' }
 	];
 </script>
 
 <svelte:head>
-	<title>Compressly — Browser-based File Compression</title>
+	<title>Compressly — Browser-based file compression</title>
 </svelte:head>
 
 <div class="page">
+
 	<!-- Hero -->
 	<section class="hero">
-		<div class="hero-bg">
-			<div class="orb orb1"></div>
-			<div class="orb orb2"></div>
-			<div class="orb orb3"></div>
-			<div class="grid-lines"></div>
-		</div>
 		<div class="hero-inner">
-			<div class="hero-badge">
-				<span class="badge-dot"></span>
-				Alpha Release · Draft 1
+			<div class="hero-label">
+				<span class="dot"></span>
+				Draft 1 · Alpha · All-browser, all-device
 			</div>
+
 			<h1 class="hero-title">
-				Compress anything.<br />
-				<span class="gradient-text">Keep everything private.</span>
+				Smaller files.<br>No compromises.
 			</h1>
-			<p class="hero-sub">
-				Images, PDFs, and video — compressed entirely in your browser using hardware-accelerated APIs.
-				No uploads. No servers. No tracking. Just smaller files.
+
+			<p class="hero-body">
+				Compress images, PDFs, and video entirely in your browser.
+				Hardware-accelerated where possible. Zero uploads, zero tracking.
+				Your files stay on your device — always.
 			</p>
+
 			<div class="hero-actions">
 				<a href="/compress" class="btn-primary">
-					<span>Start Compressing</span>
-					<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+					Start compressing
+					<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
 				</a>
 				<a href="/about" class="btn-ghost">How it works</a>
 			</div>
-			<div class="hero-formats">
-				{#each ['JPEG', 'PNG', 'WebP', 'AVIF', 'PDF', 'MP4', 'WebM'] as fmt}
-					<span class="format-pill">{fmt}</span>
+
+			<div class="format-row">
+				{#each ['JPEG', 'PNG', 'WebP', 'AVIF', 'PDF', 'MP4', 'WebM'] as f}
+					<span class="format-chip">{f}</span>
 				{/each}
+			</div>
+		</div>
+
+		<div class="hero-visual">
+			<div class="visual-card">
+				<div class="vc-header">
+					<div class="vc-dots">
+						<span></span><span></span><span></span>
+					</div>
+					<span class="vc-title">compressor</span>
+				</div>
+				<div class="vc-files">
+					<div class="vc-file done">
+						<span class="vc-file-icon">🖼️</span>
+						<div class="vc-file-info">
+							<span class="vc-name">photo_holiday.jpg</span>
+							<span class="vc-meta">4.2 MB → 380 KB</span>
+						</div>
+						<span class="vc-badge saved">−91%</span>
+					</div>
+					<div class="vc-file done">
+						<span class="vc-file-icon">📄</span>
+						<div class="vc-file-info">
+							<span class="vc-name">report_Q4_2025.pdf</span>
+							<span class="vc-meta">18.3 MB → 2.1 MB</span>
+						</div>
+						<span class="vc-badge saved">−88%</span>
+					</div>
+					<div class="vc-file compressing">
+						<span class="vc-file-icon">🎬</span>
+						<div class="vc-file-info">
+							<span class="vc-name">demo_reel.mp4</span>
+							<div class="vc-progress-bar">
+								<div class="vc-progress-fill" style="width: 62%"></div>
+							</div>
+						</div>
+						<span class="vc-badge compressing">62%</span>
+					</div>
+				</div>
+				<div class="vc-footer">
+					<span class="vc-privacy">🔒 Nothing leaves your browser</span>
+				</div>
 			</div>
 		</div>
 	</section>
 
 	<!-- Stats -->
-	<section class="stats-bar">
-		{#each stats as stat}
-			<div class="stat">
-				<div class="stat-value">{stat.value}</div>
-				<div class="stat-label">{stat.label}</div>
+	<section class="stats">
+		<div class="stats-inner">
+			<div class="stat-item">
+				<div class="stat-num">100%</div>
+				<div class="stat-lbl">Browser-based</div>
 			</div>
-		{/each}
+			<div class="stat-divider"></div>
+			<div class="stat-item">
+				<div class="stat-num">0 bytes</div>
+				<div class="stat-lbl">Uploaded anywhere</div>
+			</div>
+			<div class="stat-divider"></div>
+			<div class="stat-item">
+				<div class="stat-num">3 types</div>
+				<div class="stat-lbl">Images, PDF, Video</div>
+			</div>
+			<div class="stat-divider"></div>
+			<div class="stat-item">
+				<div class="stat-num">GPU ⚡</div>
+				<div class="stat-lbl">Hardware acceleration</div>
+			</div>
+		</div>
 	</section>
 
 	<!-- Features -->
 	<section class="features">
-		<div class="section-inner">
-			<div class="section-header">
-				<h2 class="section-title">Everything you need to compress files</h2>
-				<p class="section-sub">Powered by modern browser APIs — Canvas, WebCodecs, WebWorkers, and OffscreenCanvas.</p>
-			</div>
+		<div class="section-wrap">
+			<div class="section-label">What you can compress</div>
+			<h2 class="section-title">Three formats. One tool.</h2>
+			<p class="section-body">
+				Every format handled with the right browser API for the job —
+				Canvas for images, PDF.js for documents, WebCodecs for video.
+			</p>
 			<div class="features-grid">
-				{#each features as feat}
-					<div class="feature-card" style="--card-color: {feat.color}">
-						<div class="card-icon">{feat.icon}</div>
-						<h3 class="card-title">{feat.title}</h3>
-						<p class="card-desc">{feat.desc}</p>
-						<div class="card-tags">
-							{#each feat.tags as tag}
-								<span class="tag">{tag}</span>
+				{#each features as f}
+					<div class="feat-card" style="--card-accent: {f.color}">
+						<div class="feat-icon">{f.icon}</div>
+						<h3>{f.title}</h3>
+						<p>{f.desc}</p>
+						<div class="feat-tags">
+							{#each f.tags as tag}
+								<span>{tag}</span>
 							{/each}
 						</div>
 					</div>
@@ -129,228 +159,278 @@
 
 	<!-- How it works -->
 	<section class="how">
-		<div class="section-inner">
-			<div class="section-header">
-				<h2 class="section-title">How it works</h2>
-			</div>
-			<div class="steps">
-				<div class="step">
-					<div class="step-num">01</div>
+		<div class="section-wrap">
+			<div class="section-label">Process</div>
+			<h2 class="section-title">Three steps, done.</h2>
+			<div class="steps-row">
+				<div class="step-card">
+					<div class="step-n">1</div>
 					<h3>Drop your file</h3>
-					<p>Drag and drop or pick from your device. Images, PDFs, and video all accepted.</p>
+					<p>Drag, drop, or browse. Images, PDFs, and video all accepted at once.</p>
 				</div>
-				<div class="step-arrow">→</div>
-				<div class="step">
-					<div class="step-num">02</div>
-					<h3>Set your target</h3>
-					<p>Choose quality, format, or enter an exact target file size in KB or MB.</p>
+				<div class="step-connector">
+					<svg width="32" height="12" viewBox="0 0 32 12" fill="none"><path d="M0 6h28M22 1l6 5-6 5" stroke="var(--border-mid)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
 				</div>
-				<div class="step-arrow">→</div>
-				<div class="step">
-					<div class="step-num">03</div>
+				<div class="step-card">
+					<div class="step-n">2</div>
+					<h3>Pick your target</h3>
+					<p>Set quality, choose format, or enter an exact target size in KB or MB.</p>
+				</div>
+				<div class="step-connector">
+					<svg width="32" height="12" viewBox="0 0 32 12" fill="none"><path d="M0 6h28M22 1l6 5-6 5" stroke="var(--border-mid)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+				</div>
+				<div class="step-card">
+					<div class="step-n">3</div>
 					<h3>Download instantly</h3>
-					<p>Compressed file downloads immediately. Nothing ever leaves your browser.</p>
+					<p>Your compressed file downloads right away. Nothing is ever saved or sent anywhere.</p>
 				</div>
 			</div>
 		</div>
 	</section>
 
-	<!-- CTA -->
-	<section class="cta-section">
-		<div class="cta-inner">
-			<div class="cta-glow"></div>
-			<h2>Ready to compress?</h2>
-			<p>No sign-up required. Works on any modern browser, any device.</p>
-			<a href="/compress" class="btn-primary large">
-				Open the Compressor
-				<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
-			</a>
+	<!-- Privacy callout -->
+	<section class="privacy-callout">
+		<div class="section-wrap">
+			<div class="callout-card">
+				<div class="callout-icon">🔒</div>
+				<div class="callout-text">
+					<h3>Private by design, not by policy</h3>
+					<p>
+						There's no server to send files to. Compression runs using browser APIs — Canvas, WebCodecs,
+						OffscreenCanvas — entirely inside your tab. Close the tab and everything is gone.
+						We don't collect anything because there's nothing to collect.
+					</p>
+				</div>
+				<a href="/compress" class="btn-primary">Try it now</a>
+			</div>
 		</div>
 	</section>
+
 </div>
 
 <style>
 	.page { width: 100%; }
 
-	/* HERO */
+	/* ── HERO ───────────────────────────────────────── */
 	.hero {
-		position: relative; min-height: 90vh;
-		display: flex; align-items: center; justify-content: center;
-		overflow: hidden; padding: 4rem 2rem;
-	}
-	.hero-bg { position: absolute; inset: 0; pointer-events: none; }
-	.orb {
-		position: absolute; border-radius: 50%;
-		filter: blur(80px); opacity: 0.15;
-		animation: drift 8s ease-in-out infinite;
-	}
-	.orb1 { width: 600px; height: 600px; background: var(--accent); top: -100px; left: -100px; }
-	.orb2 { width: 400px; height: 400px; background: #ff6b6b; bottom: -50px; right: 10%; animation-delay: -3s; }
-	.orb3 { width: 300px; height: 300px; background: var(--accent3); top: 40%; left: 50%; animation-delay: -6s; }
-
-	.grid-lines {
-		position: absolute; inset: 0;
-		background-image:
-			linear-gradient(rgba(108,99,255,0.04) 1px, transparent 1px),
-			linear-gradient(90deg, rgba(108,99,255,0.04) 1px, transparent 1px);
-		background-size: 60px 60px;
+		max-width: 1100px; margin: 0 auto;
+		padding: 5rem 2rem 4rem;
+		display: grid; grid-template-columns: 1fr 1fr;
+		gap: 4rem; align-items: center;
 	}
 
-	@keyframes drift {
-		0%, 100% { transform: translate(0, 0) scale(1); }
-		33% { transform: translate(30px, -20px) scale(1.05); }
-		66% { transform: translate(-20px, 30px) scale(0.95); }
-	}
-
-	.hero-inner {
-		position: relative; z-index: 1;
-		max-width: 780px; margin: 0 auto; text-align: center;
-	}
-	.hero-badge {
+	.hero-label {
 		display: inline-flex; align-items: center; gap: 0.5rem;
-		padding: 0.35rem 1rem; background: var(--surface);
-		border: 1px solid var(--border-bright); border-radius: 100px;
-		font-size: 0.78rem; font-family: var(--mono); color: var(--text-dim);
-		margin-bottom: 2rem;
+		font-size: 0.8rem; font-family: var(--mono);
+		color: var(--text-3); margin-bottom: 1.5rem;
 	}
-	.badge-dot {
-		width: 7px; height: 7px; background: #06d6a0;
-		border-radius: 50%; box-shadow: 0 0 6px #06d6a0;
+	.dot {
+		width: 7px; height: 7px; background: #37b24d;
+		border-radius: 50%; box-shadow: 0 0 0 3px rgba(55,178,77,0.2);
 		animation: pulse 2s ease-in-out infinite;
 	}
-	@keyframes pulse {
-		0%, 100% { opacity: 1; } 50% { opacity: 0.4; }
-	}
+	@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
 
 	.hero-title {
-		font-size: clamp(2.8rem, 7vw, 5.5rem);
-		font-weight: 800; line-height: 1.05;
-		letter-spacing: -0.03em; margin-bottom: 1.5rem;
+		font-size: clamp(2.4rem, 5vw, 3.8rem);
+		font-weight: 800; line-height: 1.1;
+		letter-spacing: -0.03em; color: var(--text);
+		margin-bottom: 1.25rem;
 	}
-	.gradient-text {
-		background: linear-gradient(135deg, var(--accent) 0%, var(--accent3) 100%);
-		-webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+
+	.hero-body {
+		font-size: 1.05rem; color: var(--text-3);
+		line-height: 1.75; margin-bottom: 2rem; max-width: 480px;
 	}
-	.hero-sub {
-		font-size: 1.15rem; color: var(--text-dim); max-width: 560px;
-		margin: 0 auto 2.5rem; line-height: 1.7;
+
+	.hero-actions {
+		display: flex; gap: 0.75rem; align-items: center;
+		margin-bottom: 2rem; flex-wrap: wrap;
 	}
-	.hero-actions { display: flex; gap: 1rem; justify-content: center; margin-bottom: 2.5rem; flex-wrap: wrap; }
 
 	.btn-primary {
-		display: inline-flex; align-items: center; gap: 0.6rem;
-		padding: 0.85rem 2rem; background: var(--accent); color: white;
-		border-radius: var(--radius); font-weight: 700; font-size: 1rem;
-		transition: var(--transition); border: none;
+		display: inline-flex; align-items: center; gap: 0.5rem;
+		padding: 0.7rem 1.5rem; background: var(--accent); color: white;
+		border-radius: var(--radius); font-weight: 600; font-size: 0.95rem;
+		border: none; transition: var(--transition);
+		box-shadow: 0 1px 3px rgba(59,91,219,0.25);
 	}
-	.btn-primary:hover { background: #7d75ff; box-shadow: 0 0 30px var(--accent-glow); transform: translateY(-1px); }
-	.btn-primary.large { padding: 1rem 2.4rem; font-size: 1.05rem; }
+	.btn-primary:hover {
+		background: var(--accent-mid);
+		box-shadow: 0 4px 14px rgba(59,91,219,0.35);
+		transform: translateY(-1px);
+	}
 
 	.btn-ghost {
 		display: inline-flex; align-items: center; gap: 0.5rem;
-		padding: 0.85rem 2rem; background: transparent; color: var(--text-dim);
-		border: 1px solid var(--border-bright); border-radius: var(--radius);
-		font-weight: 600; font-size: 1rem; transition: var(--transition);
+		padding: 0.7rem 1.5rem; background: transparent;
+		border: 1px solid var(--border-mid); color: var(--text-2);
+		border-radius: var(--radius); font-weight: 600; font-size: 0.95rem;
+		transition: var(--transition);
 	}
-	.btn-ghost:hover { border-color: var(--accent); color: var(--text); background: var(--surface); }
+	.btn-ghost:hover { border-color: var(--text-3); background: var(--bg2); color: var(--text); }
 
-	.hero-formats { display: flex; gap: 0.5rem; justify-content: center; flex-wrap: wrap; }
-	.format-pill {
-		padding: 0.25rem 0.75rem; background: var(--bg3);
-		border: 1px solid var(--border); border-radius: 100px;
-		font-size: 0.75rem; font-family: var(--mono); color: var(--text-dim);
+	.format-row { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+	.format-chip {
+		padding: 0.2rem 0.65rem; background: var(--bg2);
+		border: 1px solid var(--border); border-radius: 6px;
+		font-size: 0.73rem; font-family: var(--mono); color: var(--text-3);
 	}
 
-	/* STATS */
-	.stats-bar {
-		display: flex; justify-content: center; gap: 0;
-		border-top: 1px solid var(--border); border-bottom: 1px solid var(--border);
+	/* ── HERO VISUAL ────────────────────────────────── */
+	.hero-visual { display: flex; justify-content: center; }
+
+	.visual-card {
+		width: 100%; max-width: 380px;
+		background: var(--surface); border: 1px solid var(--border);
+		border-radius: var(--radius-xl); box-shadow: var(--shadow-lg);
+		overflow: hidden;
+	}
+	.vc-header {
+		padding: 0.9rem 1.1rem; border-bottom: 1px solid var(--border);
+		display: flex; align-items: center; gap: 0.75rem;
 		background: var(--bg2);
 	}
-	.stat {
-		flex: 1; max-width: 220px; text-align: center;
-		padding: 1.8rem 1rem;
-		border-right: 1px solid var(--border);
+	.vc-dots { display: flex; gap: 5px; }
+	.vc-dots span {
+		width: 11px; height: 11px; border-radius: 50%;
+		background: var(--border-mid);
 	}
-	.stat:last-child { border-right: none; }
-	.stat-value { font-size: 1.8rem; font-weight: 800; color: var(--accent); letter-spacing: -0.02em; }
-	.stat-label { font-size: 0.8rem; color: var(--text-dim); font-family: var(--mono); margin-top: 0.25rem; }
+	.vc-dots span:nth-child(1) { background: #ff5f56; }
+	.vc-dots span:nth-child(2) { background: #ffbd2e; }
+	.vc-dots span:nth-child(3) { background: #27c93f; }
+	.vc-title { font-size: 0.78rem; font-family: var(--mono); color: var(--text-4); margin-left: 0.25rem; }
 
-	/* FEATURES */
-	.features { padding: 6rem 2rem; }
-	.section-inner { max-width: 1100px; margin: 0 auto; }
-	.section-header { text-align: center; margin-bottom: 3.5rem; }
-	.section-title { font-size: clamp(1.8rem, 4vw, 2.8rem); font-weight: 800; letter-spacing: -0.02em; margin-bottom: 0.75rem; }
-	.section-sub { color: var(--text-dim); font-size: 1rem; max-width: 500px; margin: 0 auto; }
+	.vc-files { padding: 0.75rem; display: flex; flex-direction: column; gap: 0.5rem; }
 
+	.vc-file {
+		display: flex; align-items: center; gap: 0.75rem;
+		padding: 0.7rem 0.85rem; border-radius: 10px;
+		border: 1px solid var(--border); background: var(--bg);
+		transition: var(--transition);
+	}
+	.vc-file.done { border-color: rgba(55,178,77,0.25); background: rgba(55,178,77,0.04); }
+	.vc-file.compressing { border-color: rgba(59,91,219,0.2); background: var(--accent-soft); }
+	.vc-file-icon { font-size: 1.25rem; flex-shrink: 0; }
+	.vc-file-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 0.25rem; }
+	.vc-name { font-size: 0.78rem; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+	.vc-meta { font-size: 0.72rem; font-family: var(--mono); color: var(--text-3); }
+	.vc-progress-bar { height: 3px; background: var(--border); border-radius: 2px; overflow: hidden; margin-top: 2px; }
+	.vc-progress-fill { height: 100%; background: var(--accent); border-radius: 2px; transition: width 0.3s ease; }
+
+	.vc-badge {
+		font-size: 0.72rem; font-family: var(--mono); font-weight: 600;
+		padding: 0.15rem 0.5rem; border-radius: 5px; flex-shrink: 0;
+	}
+	.vc-badge.saved { background: rgba(55,178,77,0.12); color: #2f9e44; }
+	.vc-badge.compressing { background: var(--accent-soft); color: var(--accent); }
+
+	.vc-footer {
+		padding: 0.75rem 1rem; border-top: 1px solid var(--border);
+		background: var(--bg2);
+	}
+	.vc-privacy { font-size: 0.75rem; font-family: var(--mono); color: var(--text-4); }
+
+	/* ── STATS ──────────────────────────────────────── */
+	.stats {
+		background: var(--surface); border-top: 1px solid var(--border);
+		border-bottom: 1px solid var(--border);
+	}
+	.stats-inner {
+		max-width: 860px; margin: 0 auto; padding: 2rem;
+		display: flex; align-items: center; justify-content: center;
+		gap: 0; flex-wrap: wrap;
+	}
+	.stat-item { text-align: center; padding: 0.5rem 2.5rem; }
+	.stat-num { font-size: 1.6rem; font-weight: 800; color: var(--accent); letter-spacing: -0.02em; }
+	.stat-lbl { font-size: 0.8rem; color: var(--text-3); margin-top: 0.15rem; }
+	.stat-divider { width: 1px; height: 40px; background: var(--border); flex-shrink: 0; }
+
+	/* ── SHARED SECTION STYLES ─────────────────────── */
+	.section-wrap { max-width: 920px; margin: 0 auto; padding: 5rem 2rem; }
+	.section-label {
+		font-size: 0.78rem; font-family: var(--mono);
+		color: var(--accent); font-weight: 500;
+		text-transform: uppercase; letter-spacing: 0.08em;
+		margin-bottom: 0.75rem;
+	}
+	.section-title {
+		font-size: clamp(1.75rem, 3.5vw, 2.5rem);
+		font-weight: 800; letter-spacing: -0.025em;
+		color: var(--text); margin-bottom: 1rem;
+	}
+	.section-body { font-size: 1rem; color: var(--text-3); line-height: 1.75; max-width: 520px; margin-bottom: 3rem; }
+
+	/* ── FEATURES ───────────────────────────────────── */
 	.features-grid {
-		display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 1.25rem;
+		display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem;
 	}
-	.feature-card {
-		padding: 2rem; background: var(--bg2);
+	.feat-card {
+		padding: 1.75rem; background: var(--surface);
 		border: 1px solid var(--border); border-radius: var(--radius-lg);
-		transition: var(--transition); position: relative; overflow: hidden;
+		transition: var(--transition); position: relative;
 	}
-	.feature-card::before {
+	.feat-card::after {
 		content: ''; position: absolute;
-		top: 0; left: 0; right: 0; height: 2px;
-		background: var(--card-color);
-		opacity: 0.6;
+		top: 0; left: 1.5rem; right: 1.5rem; height: 2px;
+		background: var(--card-accent); border-radius: 0 0 4px 4px; opacity: 0.7;
 	}
-	.feature-card:hover {
-		border-color: var(--card-color);
-		background: var(--bg3);
-		transform: translateY(-3px);
-		box-shadow: 0 8px 30px rgba(0,0,0,0.3);
+	.feat-card:hover {
+		box-shadow: var(--shadow-md); transform: translateY(-2px);
+		border-color: var(--border-mid);
 	}
-	.card-icon { font-size: 2rem; margin-bottom: 1rem; display: block; }
-	.card-title { font-size: 1.1rem; font-weight: 700; margin-bottom: 0.5rem; }
-	.card-desc { font-size: 0.875rem; color: var(--text-dim); line-height: 1.6; margin-bottom: 1.25rem; }
-	.card-tags { display: flex; gap: 0.4rem; flex-wrap: wrap; }
-	.tag {
-		padding: 0.2rem 0.6rem; background: var(--surface); border-radius: 6px;
-		font-size: 0.72rem; font-family: var(--mono); color: var(--text-dimmer);
+	.feat-icon { font-size: 1.75rem; margin-bottom: 0.85rem; display: block; }
+	.feat-card h3 { font-size: 1rem; font-weight: 700; color: var(--text); margin-bottom: 0.5rem; }
+	.feat-card p { font-size: 0.875rem; color: var(--text-3); line-height: 1.65; margin-bottom: 1.1rem; }
+	.feat-tags { display: flex; gap: 0.35rem; flex-wrap: wrap; }
+	.feat-tags span {
+		padding: 0.18rem 0.55rem; background: var(--bg2);
+		border: 1px solid var(--border); border-radius: 5px;
+		font-size: 0.7rem; font-family: var(--mono); color: var(--text-3);
 	}
 
-	/* HOW */
-	.how { padding: 5rem 2rem; background: var(--bg2); border-top: 1px solid var(--border); }
-	.steps {
-		display: flex; align-items: center; gap: 1rem;
-		justify-content: center; flex-wrap: wrap;
+	/* ── HOW IT WORKS ───────────────────────────────── */
+	.how { background: var(--bg2); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+	.steps-row {
+		display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;
 	}
-	.step {
-		flex: 1; min-width: 220px; max-width: 280px;
-		background: var(--bg3); border: 1px solid var(--border);
-		border-radius: var(--radius-lg); padding: 2rem 1.5rem; text-align: center;
+	.step-card {
+		flex: 1; min-width: 200px; max-width: 260px;
+		padding: 1.5rem; background: var(--surface);
+		border: 1px solid var(--border); border-radius: var(--radius-lg);
 	}
-	.step-num {
-		font-family: var(--mono); font-size: 2.5rem; font-weight: 300;
-		color: var(--accent); opacity: 0.5; margin-bottom: 0.75rem;
+	.step-n {
+		width: 32px; height: 32px; background: var(--accent-soft);
+		border: 1.5px solid var(--accent); border-radius: 8px;
+		display: flex; align-items: center; justify-content: center;
+		font-size: 0.85rem; font-weight: 700; color: var(--accent);
+		margin-bottom: 0.85rem;
 	}
-	.step h3 { font-weight: 700; margin-bottom: 0.5rem; }
-	.step p { font-size: 0.875rem; color: var(--text-dim); line-height: 1.6; }
-	.step-arrow { font-size: 1.5rem; color: var(--text-dimmer); }
+	.step-card h3 { font-size: 0.95rem; font-weight: 700; color: var(--text); margin-bottom: 0.4rem; }
+	.step-card p { font-size: 0.83rem; color: var(--text-3); line-height: 1.6; }
+	.step-connector { flex-shrink: 0; }
 
-	/* CTA */
-	.cta-section {
-		padding: 7rem 2rem; text-align: center;
-		border-top: 1px solid var(--border);
+	/* ── PRIVACY CALLOUT ────────────────────────────── */
+	.callout-card {
+		display: flex; align-items: center; gap: 2rem;
+		padding: 2.5rem; background: var(--accent-soft);
+		border: 1px solid rgba(59,91,219,0.2); border-radius: var(--radius-xl);
+		flex-wrap: wrap;
 	}
-	.cta-inner { position: relative; max-width: 600px; margin: 0 auto; }
-	.cta-glow {
-		position: absolute; top: 50%; left: 50%;
-		transform: translate(-50%, -50%);
-		width: 500px; height: 200px;
-		background: var(--accent); filter: blur(100px); opacity: 0.08;
-		pointer-events: none;
-	}
-	.cta-inner h2 { font-size: 2.5rem; font-weight: 800; letter-spacing: -0.02em; margin-bottom: 1rem; }
-	.cta-inner p { color: var(--text-dim); margin-bottom: 2rem; font-size: 1rem; }
+	.callout-icon { font-size: 2.5rem; flex-shrink: 0; }
+	.callout-text { flex: 1; min-width: 260px; }
+	.callout-text h3 { font-size: 1.1rem; font-weight: 700; color: var(--text); margin-bottom: 0.5rem; }
+	.callout-text p { font-size: 0.9rem; color: var(--text-3); line-height: 1.7; }
 
-	@media (max-width: 600px) {
-		.stats-bar { flex-wrap: wrap; }
-		.stat { border-right: none; border-bottom: 1px solid var(--border); min-width: 50%; }
-		.step-arrow { transform: rotate(90deg); }
-		.steps { flex-direction: column; }
+	@media (max-width: 860px) {
+		.hero { grid-template-columns: 1fr; padding: 3rem 1.5rem 2.5rem; gap: 2.5rem; }
+		.hero-visual { order: -1; }
+		.features-grid { grid-template-columns: 1fr; }
+		.steps-row { flex-direction: column; align-items: flex-start; }
+		.step-connector { transform: rotate(90deg); }
+		.stats-inner { gap: 0; }
+		.stat-divider { display: none; }
+		.stat-item { min-width: 50%; }
+		.callout-card { flex-direction: column; gap: 1.25rem; }
 	}
 </style>
