@@ -1,15 +1,22 @@
 export type FileType = 'image' | 'pdf' | 'video' | 'unknown';
-
 export type ImageFormat = 'image/jpeg' | 'image/png' | 'image/webp' | 'image/avif';
 
 export interface CompressOptions {
-	quality?: number;         // 0–1 for images/video
-	targetSizeKB?: number;    // target file size in KB
-	format?: ImageFormat;     // output format for images
-	maxWidth?: number;        // max dimension
+	// Image & general
+	quality?: number;          // 0–1
+	targetSizeKB?: number;
+	format?: ImageFormat;
+	maxWidth?: number;
 	maxHeight?: number;
-	videoBitrate?: number;    // bps for video
-	stripMetadata?: boolean;  // PDF/image metadata stripping
+	stripMetadata?: boolean;
+	// Video-specific
+	videoBitrate?: number;     // bps
+	videoCodec?: 'h264' | 'vp9' | 'av1';
+	videoPreset?: 'ultrafast' | 'fast' | 'medium' | 'slow';
+	fps?: number;
+	// PDF-specific
+	pdfRenderScale?: number;   // 1.0–3.0 (higher = sharper pages)
+	pdfImageFormat?: 'image/jpeg' | 'image/png';
 }
 
 export interface CompressResult {
@@ -20,7 +27,7 @@ export interface CompressResult {
 	format: string;
 	width?: number;
 	height?: number;
-	duration?: number; // seconds, for video
+	duration?: number;
 }
 
 export interface FileEntry {
@@ -38,21 +45,19 @@ export function detectFileType(file: File): FileType {
 	if (file.type.startsWith('image/')) return 'image';
 	if (file.type === 'application/pdf') return 'pdf';
 	if (file.type.startsWith('video/')) return 'video';
-	// fallback by extension
-	const ext = file.name.split('.').pop()?.toLowerCase();
-	if (['jpg','jpeg','png','webp','avif','gif'].includes(ext ?? '')) return 'image';
+	const ext = file.name.split('.').pop()?.toLowerCase() ?? '';
+	if (['jpg','jpeg','png','webp','avif','gif','bmp','tiff','heic'].includes(ext)) return 'image';
 	if (ext === 'pdf') return 'pdf';
-	if (['mp4','webm','mov','avi','mkv'].includes(ext ?? '')) return 'video';
+	if (['mp4','webm','mov','avi','mkv','m4v','flv','wmv'].includes(ext)) return 'video';
 	return 'unknown';
 }
 
 export function formatBytes(bytes: number, decimals = 2): string {
 	if (bytes === 0) return '0 B';
 	const k = 1024;
-	const dm = Math.max(0, decimals);
 	const sizes = ['B', 'KB', 'MB', 'GB'];
 	const i = Math.floor(Math.log(bytes) / Math.log(k));
-	return `${parseFloat((bytes / Math.pow(k, i)).toFixed(dm))} ${sizes[i]}`;
+	return `${parseFloat((bytes / Math.pow(k, i)).toFixed(Math.max(0, decimals)))} ${sizes[i]}`;
 }
 
 export function uid(): string {
