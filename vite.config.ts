@@ -3,8 +3,14 @@ import { defineConfig } from 'vite';
 
 export default defineConfig({
 	plugins: [sveltekit()],
+	// FFmpeg loaded from CDN at runtime — exclude from bundle entirely
+	build: {
+		rollupOptions: {
+			external: []
+		}
+	},
 	optimizeDeps: {
-		exclude: ['@ffmpeg/ffmpeg', '@ffmpeg/util', '@ffmpeg/core']
+		exclude: []
 	},
 	server: {
 		headers: {
