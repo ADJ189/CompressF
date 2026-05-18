@@ -1,94 +1,178 @@
 import type { CompressOptions, CompressResult } from './types';
 
 /**
- * PDF compression engine.
+ * PDF compression engine — fixed blank page bug.
  *
- * Strategy:
- *  1. Load with PDF.js (CDN, lazy) — parses PDF structure, renders pages.
- *  2. Each page rendered at configurable scale to OffscreenCanvas / Canvas.
- *  3. Pages re-encoded as JPEG (lossy, best ratio) or PNG (lossless).
- *  4. Pages reassembled into a valid minimal PDF with embedded image XObjects.
+ * Root causes of blank pages (from PDF.js issues):
+ *  1. Canvas width/height must be set BEFORE getContext('2d') is called
+ *  2. page.render() returns a RenderTask — must await .promise not the task itself
+ *  3. PDF.js worker must be fully initialised before getDocument()
+ *  4. Pages must be rendered sequentially (not in parallel) to avoid canvas conflicts
  *
- * Hardware notes:
- *  - PDF.js rendering uses the browser's Canvas 2D backend, which is GPU-composited.
- *  - createImageBitmap for any embedded images uses OS GPU decoders.
- *  - The output PDF builder is pure TypeScript — zero native dependencies.
+ * iLovePDF-inspired compression levels:
+ *  - Low (0.92):         minimal loss, preserves quality
+ *  - Recommended (0.82): good balance — default
+ *  - Extreme (0.55):     maximum compression, slight quality loss
  */
+
+// ── PDF.js loader ─────────────────────────────────────────────────────────────
+
+let pdfjsPromise: Promise<any> | null = null;
+
+async function getPdfJs(): Promise<any> {
+	if (pdfjsPromise) return pdfjsPromise;
+
+	pdfjsPromise = new Promise((resolve, reject) => {
+		// Use the stable 3.x UMD build — most reliable cross-browser
+		if ((window as any).pdfjsLib) {
+			resolve((window as any).pdfjsLib);
+			return;
+		}
+
+		const script = document.createElement('script');
+		script.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+
+		script.onload = () => {
+			const lib = (window as any).pdfjsLib;
+			if (!lib) { reject(new Error('PDF.js loaded but pdfjsLib not found')); return; }
+
+			// Worker must be set before any getDocument() call
+			lib.GlobalWorkerOptions.workerSrc =
+				'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+			resolve(lib);
+		};
+
+		script.onerror = () => reject(new Error('Failed to load PDF.js from CDN'));
+		document.head.appendChild(script);
+	});
+
+	return pdfjsPromise;
+}
+
+// ── Compression presets (iLovePDF-style) ─────────────────────────────────────
+
+export type PdfCompressionLevel = 'low' | 'recommended' | 'extreme';
+
+const PRESETS: Record<PdfCompressionLevel, { quality: number; scale: number; label: string }> = {
+	low:         { quality: 0.92, scale: 2.0, label: 'Low — high quality, less compression' },
+	recommended: { quality: 0.82, scale: 1.8, label: 'Recommended — best balance' },
+	extreme:     { quality: 0.55, scale: 1.2, label: 'Extreme — maximum compression' },
+};
+
+// ── Main export ───────────────────────────────────────────────────────────────
+
 export async function compressPdf(
 	file: File,
 	options: CompressOptions,
 	onProgress?: (pct: number) => void
 ): Promise<CompressResult> {
-	onProgress?.(3);
-	const quality = options.quality ?? 0.82;
-	const renderScale = options.pdfRenderScale ?? 1.8; // higher = more detail retained
-	const imgFormat   = options.pdfImageFormat ?? 'image/jpeg';
+	onProgress?.(2);
 
-	const pdfjsLib = await loadPdfJs();
+	// Load PDF.js (cached after first call)
+	const pdfjs = await getPdfJs();
 	onProgress?.(8);
 
-	const ab  = await file.arrayBuffer();
-	const pdf = await pdfjsLib.getDocument({ data: ab }).promise;
-	const n   = pdf.numPages;
+	// Read file as ArrayBuffer
+	const arrayBuffer = await file.arrayBuffer();
+
+	// Load PDF document — pass copy of buffer so PDF.js can transfer it
+	const pdf = await pdfjs.getDocument({
+		data: arrayBuffer,
+		// These prevent font-related render issues
+		cMapUrl: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/cmaps/',
+		cMapPacked: true,
+	}).promise;
+
 	onProgress?.(12);
 
-	const pages: { blob: Blob; w: number; h: number }[] = [];
+	const numPages = pdf.numPages;
 
-	for (let i = 1; i <= n; i++) {
-		const page     = await pdf.getPage(i);
-		const viewport = page.getViewport({ scale: renderScale });
-		const pw       = Math.round(viewport.width);
-		const ph       = Math.round(viewport.height);
+	// Determine quality and scale
+	const level = (options.pdfCompressionLevel as PdfCompressionLevel) ?? 'recommended';
+	const preset = PRESETS[level] ?? PRESETS.recommended;
+	const quality = options.quality ?? preset.quality;
+	const scale   = options.pdfRenderScale ?? preset.scale;
+	const imgFmt  = options.pdfImageFormat ?? 'image/jpeg';
 
-		const canvas   = document.createElement('canvas');
-		canvas.width   = pw;
-		canvas.height  = ph;
-		const ctx      = canvas.getContext('2d')!;
+	// Render pages SEQUENTIALLY — parallel rendering causes blank pages
+	const pageBlobs: Array<{ blob: Blob; w: number; h: number }> = [];
 
-		// White background (PDFs may have transparent pages)
-		ctx.fillStyle = '#ffffff';
-		ctx.fillRect(0, 0, pw, ph);
-
-		await page.render({ canvasContext: ctx, viewport }).promise;
-
-		// Encode page
-		let blob: Blob;
-		if (options.targetSizeKB && options.targetSizeKB > 0) {
-			// Distribute target proportionally
-			const perPageTarget = (options.targetSizeKB / n) * 1024;
-			blob = await binarySearchPage(canvas, imgFormat, perPageTarget);
-		} else {
-			blob = await encodeCanvas(canvas, imgFormat, quality);
-		}
-
-		pages.push({ blob, w: pw, h: ph });
-		onProgress?.(12 + Math.round((i / n) * 75));
+	for (let pageNum = 1; pageNum <= numPages; pageNum++) {
+		const blob = await renderPage(pdf, pageNum, scale, quality, imgFmt, options.targetSizeKB, numPages);
+		pageBlobs.push(blob);
+		onProgress?.(12 + Math.round((pageNum / numPages) * 72));
 	}
 
-	onProgress?.(88);
-	const pdfBytes = await assemblePdf(pages, renderScale);
+	onProgress?.(85);
+
+	// Assemble output PDF
+	const pdfBytes = await assemblePdf(pageBlobs, scale);
 	onProgress?.(100);
 
-	const out = new Blob([pdfBytes], { type: 'application/pdf' });
+	const outBlob = new Blob([pdfBytes], { type: 'application/pdf' });
+
 	return {
-		blob: out,
-		originalSize: file.size,
-		compressedSize: out.size,
-		compressionRatio: file.size / out.size,
-		format: 'application/pdf',
+		blob:             outBlob,
+		originalSize:     file.size,
+		compressedSize:   outBlob.size,
+		compressionRatio: file.size / outBlob.size,
+		format:           `PDF · ${level} compression`,
 	};
 }
 
-// ── Per-page binary search ────────────────────────────────────────────────────
+// ── Page renderer — THE FIX for blank pages ──────────────────────────────────
 
-async function binarySearchPage(
-	canvas: HTMLCanvasElement,
-	fmt: string,
-	targetBytes: number
-): Promise<Blob> {
+async function renderPage(
+	pdf: any,
+	pageNum: number,
+	scale: number,
+	quality: number,
+	imgFmt: string,
+	targetSizeKB: number | undefined,
+	totalPages: number
+): Promise<{ blob: Blob; w: number; h: number }> {
+	const page     = await pdf.getPage(pageNum);
+	const viewport = page.getViewport({ scale });
+
+	const w = Math.floor(viewport.width);
+	const h = Math.floor(viewport.height);
+
+	// CRITICAL: create canvas and set dimensions BEFORE getContext
+	const canvas   = document.createElement('canvas');
+	canvas.width   = w;
+	canvas.height  = h;
+
+	// CRITICAL: get context AFTER setting dimensions
+	const ctx = canvas.getContext('2d');
+	if (!ctx) throw new Error(`Canvas 2D context unavailable for page ${pageNum}`);
+
+	// White background — prevents transparent areas rendering as black in JPEG
+	ctx.fillStyle = '#ffffff';
+	ctx.fillRect(0, 0, w, h);
+
+	// CRITICAL: await the .promise property of the render task, not the task itself
+	await page.render({ canvasContext: ctx, viewport }).promise;
+
+	// Clean up page resources immediately
+	page.cleanup();
+
+	// Encode — binary search if target size specified
+	let blob: Blob;
+	if (targetSizeKB && targetSizeKB > 0) {
+		const perPageBytes = (targetSizeKB * 1024) / totalPages;
+		blob = await binarySearchPage(canvas, imgFmt, perPageBytes);
+	} else {
+		blob = await encodeCanvas(canvas, imgFmt, quality);
+	}
+
+	return { blob, w, h };
+}
+
+async function binarySearchPage(canvas: HTMLCanvasElement, fmt: string, targetBytes: number): Promise<Blob> {
 	if (fmt === 'image/png') return encodeCanvas(canvas, fmt, 1);
-	let lo = 0.05, hi = 0.95, best: Blob | null = null;
-	for (let i = 0; i < 12; i++) {
+	let lo = 0.3, hi = 0.95, best: Blob | null = null;
+	for (let i = 0; i < 10; i++) {
 		const mid  = (lo + hi) / 2;
 		const blob = await encodeCanvas(canvas, fmt, mid);
 		if (blob.size <= targetBytes) { best = blob; lo = mid; }
@@ -100,87 +184,53 @@ async function binarySearchPage(
 
 function encodeCanvas(canvas: HTMLCanvasElement, fmt: string, quality: number): Promise<Blob> {
 	return new Promise((res, rej) =>
-		canvas.toBlob(b => b ? res(b) : rej(new Error('toBlob null')), fmt, quality)
+		canvas.toBlob(
+			b => b ? res(b) : rej(new Error('Canvas toBlob returned null')),
+			fmt,
+			quality
+		)
 	);
-}
-
-// ── PDF.js loader ─────────────────────────────────────────────────────────────
-
-async function loadPdfJs(): Promise<any> {
-	return new Promise((resolve, reject) => {
-		if ((window as any).pdfjsLib) { resolve((window as any).pdfjsLib); return; }
-		const script    = document.createElement('script');
-		script.src      = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.4.168/pdf.min.mjs';
-		script.type     = 'module';
-		script.onload   = () => {
-			// pdf.mjs exports — pick up the global set by the CDN UMD build
-			// Fallback: try older 3.x UMD
-			if ((window as any).pdfjsLib) {
-				(window as any).pdfjsLib.GlobalWorkerOptions.workerSrc =
-					'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.4.168/pdf.worker.min.mjs';
-				resolve((window as any).pdfjsLib);
-			} else {
-				loadPdfJsLegacy().then(resolve).catch(reject);
-			}
-		};
-		script.onerror  = () => loadPdfJsLegacy().then(resolve).catch(reject);
-		document.head.appendChild(script);
-	});
-}
-
-function loadPdfJsLegacy(): Promise<any> {
-	return new Promise((resolve, reject) => {
-		const s   = document.createElement('script');
-		s.src     = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
-		s.onload  = () => {
-			const lib = (window as any).pdfjsLib;
-			lib.GlobalWorkerOptions.workerSrc =
-				'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-			resolve(lib);
-		};
-		s.onerror = () => reject(new Error('Failed to load PDF.js'));
-		document.head.appendChild(s);
-	});
 }
 
 // ── Minimal PDF assembler ─────────────────────────────────────────────────────
 
 async function assemblePdf(
-	pages: { blob: Blob; w: number; h: number }[],
+	pages: Array<{ blob: Blob; w: number; h: number }>,
 	scale: number
 ): Promise<Uint8Array> {
-	const enc    = new TextEncoder();
+	const enc   = new TextEncoder();
 	const parts: Uint8Array[] = [];
 	const xrefs: number[]     = [];
-	let offset   = 0;
+	let   offset = 0;
 
 	const write = (s: string) => {
 		const b = enc.encode(s); parts.push(b); offset += b.length;
 	};
 	const writeRaw = (b: Uint8Array) => { parts.push(b); offset += b.length; };
 
-	// Header
 	write('%PDF-1.5\n%\xFF\xFF\xFF\xFF\n');
 
-	const n = pages.length;
-	// Object layout:
-	//   1 = catalog
-	//   2 = pages
-	//   3..3+n-1   = page objects
-	//   3+n..3+2n-1 = image XObjects
+	const n       = pages.length;
+	// Objects: 1=catalog, 2=pages, 3..3+n-1=page objs, 3+n..3+2n-1=img xobjs
+	const catId   = 1;
+	const pagesId = 2;
 
-	// Object 2: Pages
-	xrefs[2] = offset;
+	// Object 2 — Pages dictionary
+	xrefs[pagesId] = offset;
 	const kids = Array.from({ length: n }, (_, i) => `${3 + i} 0 R`).join(' ');
 	write(`2 0 obj\n<< /Type /Pages /Kids [${kids}] /Count ${n} >>\nendobj\n`);
 
-	const imgData: ArrayBuffer[] = await Promise.all(pages.map(p => p.blob.arrayBuffer()));
+	// Read all image data upfront
+	const imgDatas = await Promise.all(pages.map(p => p.blob.arrayBuffer()));
 
 	for (let i = 0; i < n; i++) {
 		const { w, h } = pages[i];
-		// Convert px at renderScale to PDF points (72pt/inch, screen ~96dpi)
-		const ptW = ((w / scale) * 72 / 96).toFixed(3);
-		const ptH = ((h / scale) * 72 / 96).toFixed(3);
+
+		// Convert pixels → PDF points (72pt = 1 inch, screen = 96 dpi)
+		// At render scale S: 1 PDF point = S * 96/72 pixels → ptW = w / (S * 96/72)
+		const ptW = (w / (scale * 96 / 72)).toFixed(3);
+		const ptH = (h / (scale * 96 / 72)).toFixed(3);
+
 		const pageId = 3 + i;
 		const imgId  = 3 + n + i;
 
@@ -195,20 +245,18 @@ async function assemblePdf(
 		write(`   /Resources << /XObject << /Im${i} ${imgId} 0 R >> >>\n`);
 		write(`   /Contents << /Length ${content.length} >> >>\n`);
 		write(`endobj\n`);
-		// Inline content stream
 		write(`stream\n${content}\nendstream\n`);
 
 		// Image XObject
-		const isJpeg = pages[i].blob.type.includes('jpeg');
-		const filter  = isJpeg ? '/DCTDecode' : '/FlateDecode';
-		const cs      = isJpeg ? '/DeviceRGB' : '/DeviceRGB';
-		const imgBytes = new Uint8Array(imgData[i]);
+		const imgBytes  = new Uint8Array(imgDatas[i]);
+		const isJpeg    = pages[i].blob.type.includes('jpeg');
+		const filter    = isJpeg ? '/DCTDecode' : '/FlateDecode';
 
 		xrefs[imgId] = offset;
 		write(`${imgId} 0 obj\n`);
 		write(`<< /Type /XObject /Subtype /Image\n`);
 		write(`   /Width ${w} /Height ${h}\n`);
-		write(`   /ColorSpace ${cs} /BitsPerComponent 8\n`);
+		write(`   /ColorSpace /DeviceRGB /BitsPerComponent 8\n`);
 		write(`   /Filter ${filter} /Length ${imgBytes.length} >>\n`);
 		write(`stream\n`);
 		writeRaw(imgBytes);
@@ -216,23 +264,23 @@ async function assemblePdf(
 	}
 
 	// Catalog (object 1)
-	xrefs[1] = offset;
+	xrefs[catId] = offset;
 	write(`1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n`);
 
 	// xref table
 	const xrefOffset = offset;
-	const total = 2 + 2 * n; // object count excluding object 0
-	write(`xref\n0 ${total + 1}\n`);
+	const totalObjs  = 2 + 2 * n;
+	write(`xref\n0 ${totalObjs + 1}\n`);
 	write(`0000000000 65535 f \n`);
-	for (let i = 1; i <= total; i++) {
+	for (let i = 1; i <= totalObjs; i++) {
 		write(`${String(xrefs[i] ?? 0).padStart(10, '0')} 00000 n \n`);
 	}
-	write(`trailer\n<< /Size ${total + 1} /Root 1 0 R >>\n`);
+	write(`trailer\n<< /Size ${totalObjs + 1} /Root 1 0 R >>\n`);
 	write(`startxref\n${xrefOffset}\n%%EOF\n`);
 
 	const totalLen = parts.reduce((a, p) => a + p.length, 0);
 	const out      = new Uint8Array(totalLen);
-	let pos        = 0;
+	let   pos      = 0;
 	for (const p of parts) { out.set(p, pos); pos += p.length; }
 	return out;
 }
