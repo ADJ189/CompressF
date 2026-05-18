@@ -1,54 +1,76 @@
-export type FileType = 'image' | 'pdf' | 'video' | 'unknown';
+export type FileType = 'image' | 'pdf' | 'video' | 'audio' | 'gif' | 'svg' | 'unknown';
 export type ImageFormat = 'image/jpeg' | 'image/png' | 'image/webp' | 'image/avif';
+export type AudioFormat = 'mp3' | 'aac' | 'ogg' | 'opus' | 'flac' | 'wav';
+export type VideoCodec  = 'h264' | 'h265' | 'vp9' | 'vp8' | 'av1';
+export type PdfCompressionLevel = 'low' | 'recommended' | 'extreme';
 
 export interface CompressOptions {
-	// Image & general
-	quality?: number;          // 0–1
-	targetSizeKB?: number;
-	format?: ImageFormat;
-	maxWidth?: number;
-	maxHeight?: number;
-	stripMetadata?: boolean;
-	// Video-specific
-	videoBitrate?: number;     // bps
-	videoCodec?: 'h264' | 'vp9' | 'av1';
-	videoPreset?: 'ultrafast' | 'fast' | 'medium' | 'slow';
-	fps?: number;
-	// PDF-specific
-	pdfRenderScale?: number;   // 1.0–3.0 (higher = sharper pages)
-	pdfImageFormat?: 'image/jpeg' | 'image/png';
+	// Image
+	quality?:              number;
+	targetSizeKB?:         number;
+	format?:               ImageFormat;
+	maxWidth?:             number;
+	maxHeight?:            number;
+	stripMetadata?:        boolean;
+	// Video
+	videoBitrate?:         number;
+	videoCodec?:           VideoCodec;
+	videoPreset?:          'ultrafast' | 'fast' | 'medium' | 'slow';
+	fps?:                  number;
+	// Audio
+	audioFormat?:          AudioFormat;
+	audioBitrate?:         number;
+	audioSampleRate?:      number;
+	// PDF
+	pdfCompressionLevel?:  PdfCompressionLevel;
+	pdfRenderScale?:       number;
+	pdfImageFormat?:       'image/jpeg' | 'image/png';
+	// GIF
+	gifToVideo?:           boolean;
 }
 
 export interface CompressResult {
-	blob: Blob;
-	originalSize: number;
-	compressedSize: number;
+	blob:             Blob;
+	originalSize:     number;
+	compressedSize:   number;
 	compressionRatio: number;
-	format: string;
-	width?: number;
-	height?: number;
-	duration?: number;
+	format:           string;
+	width?:           number;
+	height?:          number;
+	duration?:        number;
 }
 
 export interface FileEntry {
-	id: string;
-	file: File;
-	type: FileType;
-	status: 'idle' | 'compressing' | 'done' | 'error';
+	id:       string;
+	file:     File;
+	type:     FileType;
+	status:   'idle' | 'compressing' | 'done' | 'error';
 	progress: number;
-	result?: CompressResult;
-	error?: string;
-	options: CompressOptions;
+	result?:  CompressResult;
+	error?:   string;
+	options:  CompressOptions;
+}
+
+export interface BrowserCaps {
+	browser:             string;
+	hasOffscreenCanvas:  boolean;
+	hasWebCodecs:        boolean;
+	hasSharedArrayBuffer: boolean;
+	hasAvifEncode:       boolean;
+	hasWebpEncode:       boolean;
+	videoEngines:        string[];
+	warnings:            string[];
 }
 
 export function detectFileType(file: File): FileType {
-	if (file.type.startsWith('image/')) return 'image';
-	if (file.type === 'application/pdf') return 'pdf';
-	if (file.type.startsWith('video/')) return 'video';
-	const ext = file.name.split('.').pop()?.toLowerCase() ?? '';
-	if (['jpg','jpeg','png','webp','avif','gif','bmp','tiff','heic'].includes(ext)) return 'image';
-	if (ext === 'pdf') return 'pdf';
-	if (['mp4','webm','mov','avi','mkv','m4v','flv','wmv'].includes(ext)) return 'video';
+	const mime = file.type.toLowerCase();
+	const ext  = file.name.split('.').pop()?.toLowerCase() ?? '';
+	if (mime === 'image/gif' || ext === 'gif') return 'gif';
+	if (mime === 'image/svg+xml' || ext === 'svg') return 'svg';
+	if (mime.startsWith('image/') || ['jpg','jpeg','png','webp','avif','bmp','tiff','tif','heic','heif','ico'].includes(ext)) return 'image';
+	if (mime === 'application/pdf' || ext === 'pdf') return 'pdf';
+	if (mime.startsWith('video/') || ['mp4','webm','mov','avi','mkv','m4v','flv','wmv','ogv','3gp'].includes(ext)) return 'video';
+	if (mime.startsWith('audio/') || ['mp3','aac','ogg','opus','flac','wav','m4a','wma','aiff','aif'].includes(ext)) return 'audio';
 	return 'unknown';
 }
 
