@@ -1,70 +1,166 @@
-# Compressly
+<div align="center">
+  <img src="static/favicon.svg" width="60" alt="Compressly logo" />
+  <h1>Compressly</h1>
+  <p><strong>Fast, private, browser-native file compression.</strong><br/>Images · Video · PDF · Audio · GIF · SVG — all processed locally. Nothing ever leaves your device.</p>
 
-A fast, private, browser-based file compression tool for images, PDFs, and video.
+  <p>
+    <a href="https://compressly.pages.dev">Live App</a> ·
+    <a href="https://github.com/ADJ189/CompressF/wiki">Wiki</a> ·
+    <a href="https://github.com/ADJ189/CompressF/issues">Issues</a>
+  </p>
 
-**Draft 1 Alpha**
+  ![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)
+  ![Built with SvelteKit](https://img.shields.io/badge/built%20with-SvelteKit-ff6b35.svg)
+  ![Deployed on Cloudflare Pages](https://img.shields.io/badge/deployed%20on-Cloudflare%20Pages-f38020.svg)
+</div>
 
-## Features
+---
 
-- 🖼️ **Image compression** — JPEG, PNG, WebP, AVIF with quality control or target file size
-- 📄 **PDF optimization** — Re-encode embedded pages to reduce size
-- 🎬 **Video encoding** — WebCodecs (hardware-accelerated) with MediaRecorder fallback
-- 🎯 **Target file size** — Binary search to hit exact KB/MB targets
-- 🔒 **100% private** — No uploads, no servers, everything runs in your browser
-- ⚡ **Hardware acceleration** — OffscreenCanvas, WebCodecs, GPU encoding where supported
+## What it does
 
-## Tech Stack
+Compressly compresses files entirely inside your browser — no server, no upload, no account. It uses the same APIs that power professional browser-based tools: WebAssembly, Canvas, WebCodecs, and OffscreenCanvas.
 
-- SvelteKit + TypeScript
-- Vite
-- Canvas API / OffscreenCanvas
-- WebCodecs API
-- MediaRecorder API
-- PDF.js (CDN)
-- `@sveltejs/adapter-static` for Cloudflare Pages
+| Format | Engine | What it does |
+|--------|--------|-------------|
+| **Images** (JPEG, PNG, WebP, AVIF, BMP, TIFF, HEIC) | Canvas API + OffscreenCanvas | Quality control or exact target-size via binary search |
+| **Video** (MP4, WebM, MOV, MKV, AVI, FLV, 3GP) | FFmpeg.wasm → WebCodecs → MediaRecorder | H.264, H.265, VP9, VP8, AV1 encoding with CRF/bitrate/target-size |
+| **PDF** | PDF.js + custom PDF assembler | Re-renders pages as compressed images, reassembles valid PDF |
+| **Audio** (MP3, AAC, OGG, Opus, FLAC, WAV, M4A, AIFF) | FFmpeg.wasm | Transcode between any format; also extracts audio from video |
+| **GIF** | FFmpeg.wasm (two-pass palettegen) | Optimise with palette reduction or convert to WebM (70–95% smaller) |
+| **SVG** | Pure TypeScript | Strips metadata, collapses whitespace, rounds coordinates |
 
-## Development
+---
+
+## Privacy
+
+There is no server. Compressly is a static site — HTML, CSS, and JavaScript served from Cloudflare's CDN. File processing uses browser-native APIs:
+
+- `createImageBitmap()` — OS GPU image decoder
+- `OffscreenCanvas` — GPU compositor thread rendering
+- `FFmpeg.wasm` — ffmpeg compiled to WebAssembly, runs in your browser tab
+- `WebCodecs` — platform video encoder (Intel QSV / AMD VCE / NVIDIA NVENC via OS abstraction)
+- `MediaRecorder` — browser-native video capture
+
+**No file data is ever sent anywhere.** Closing the tab destroys everything.
+
+---
+
+## Hardware acceleration
+
+| Feature | Chrome | Safari | Firefox | Edge |
+|---------|--------|--------|---------|------|
+| GPU image decode (`createImageBitmap`) | ✅ | ✅ | ✅ | ✅ |
+| OffscreenCanvas rendering | ✅ | ✅ 16.4+ | ✅ | ✅ |
+| AVIF encode | ✅ 94+ | ✅ 16+ | ❌ → WebP | ✅ 94+ |
+| WebCodecs GPU encode | ✅ 94+ | ✅ 16.4+ | ❌ | ✅ 94+ |
+| FFmpeg.wasm multi-thread | ✅ | ✅ 16.4+ | ✅ | ✅ |
+| FFmpeg.wasm single-thread | ✅ | ✅ | ✅ | ✅ |
+
+Video encoding uses a three-tier fallback: FFmpeg.wasm (CDN, SIMD-optimised x264/VP9) → WebCodecs (hardware GPU) → MediaRecorder (universal).
+
+---
+
+## Getting started
 
 ```bash
+git clone https://github.com/ADJ189/CompressF
+cd CompressF
 npm install
 npm run dev
 ```
 
-## Build & Deploy
+Open `http://localhost:5173`.
+
+---
+
+## Build & deploy
 
 ```bash
-npm run build
+npm run build        # outputs to /build
 ```
 
-### Deploy to Cloudflare Pages
+**Cloudflare Pages settings:**
 
-1. Push to GitHub
-2. Connect repo in Cloudflare Pages dashboard
-3. Set build command: `npm run build`
-4. Set output directory: `build`
-5. Node version: 18+
+| Setting | Value |
+|---------|-------|
+| Build command | `npm run build` |
+| Output directory | `build` |
+| Node version | `22` |
+| Deploy command | `echo done` |
 
-Or use Wrangler CLI:
+The `_headers` file sets `Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy: require-corp` — required for `SharedArrayBuffer`, which enables multi-threaded FFmpeg.wasm.
+
+---
+
+## Project structure
+
+```
+src/
+├── lib/
+│   ├── compressImage.ts   # Canvas + OffscreenCanvas + binary search
+│   ├── compressVideo.ts   # FFmpeg.wasm → WebCodecs → MediaRecorder
+│   ├── compressPdf.ts     # PDF.js + custom PDF assembler
+│   ├── compressAudio.ts   # FFmpeg.wasm — MP3/AAC/OGG/Opus/FLAC/WAV
+│   ├── compressGif.ts     # FFmpeg.wasm — palettegen + paletteuse
+│   ├── optimizeSvg.ts     # Pure TS — metadata strip, coord rounding
+│   ├── ffmpeg.ts          # FFmpeg singleton (loads once, reuses)
+│   ├── browserCaps.ts     # Runtime browser capability detection
+│   ├── types.ts           # Shared types + utilities
+│   └── components/
+│       ├── DropZone.svelte
+│       └── FileCard.svelte
+└── routes/
+    ├── +page.svelte              # Homepage
+    ├── compress/
+    │   ├── +page.svelte          # Hub — all formats, quick compress
+    │   ├── images/+page.svelte   # Image compressor
+    │   ├── video/+page.svelte    # Video encoder (full codec control)
+    │   ├── pdf/+page.svelte      # PDF compressor
+    │   ├── audio/+page.svelte    # Audio converter
+    │   └── gif/+page.svelte      # GIF optimiser
+    ├── about/+page.svelte
+    └── docs/+page.svelte
+```
+
+---
+
+## Tech stack
+
+- **[SvelteKit](https://kit.svelte.dev)** — framework and routing
+- **[TypeScript](https://www.typescriptlang.org)** — type safety throughout
+- **[Plus Jakarta Sans](https://fonts.google.com/specimen/Plus+Jakarta+Sans)** — UI typography
+- **[FFmpeg.wasm](https://ffmpegwasm.netlify.app)** — loaded from [esm.sh](https://esm.sh) CDN at runtime
+- **[PDF.js](https://mozilla.github.io/pdf.js)** — loaded from cdnjs CDN at runtime
+- **[@sveltejs/adapter-static](https://github.com/sveltejs/kit/tree/main/packages/adapter-static)** — static export
+- **[Cloudflare Pages](https://pages.cloudflare.com)** — hosting and CDN
+
+---
+
+## Contributing
+
+PRs welcome. Open an issue first for large changes.
+
 ```bash
-npx wrangler pages deploy build --project-name compressly
+# Fork, then:
+git clone https://github.com/YOUR_USERNAME/CompressF
+cd CompressF
+npm install
+npm run dev
+
+# Check types
+npm run check
 ```
 
-## Browser Support
+**Roadmap:**
+- [ ] mp4box.js muxer for proper MP4 output from WebCodecs
+- [ ] Web Worker offloading for PDF rendering
+- [ ] ZIP batch download
+- [ ] Before/after preview slider
+- [ ] Drag-to-reorder file queue
+- [ ] PWA / offline support
 
-| Feature | Chrome | Safari | Firefox | Edge |
-|---|---|---|---|---|
-| Image compression | ✅ | ✅ | ✅ | ✅ |
-| PDF compression | ✅ | ✅ | ✅ | ✅ |
-| Video (WebCodecs) | ✅ 94+ | ✅ 16.4+ | ❌ | ✅ 94+ |
-| Video (MediaRecorder) | ✅ | ✅ | ✅ | ✅ |
-| AVIF output | ✅ 94+ | ✅ 16+ | ❌ | ✅ 94+ |
-| OffscreenCanvas | ✅ | ✅ | ✅ | ✅ |
+---
 
-## Roadmap (v1)
+## License
 
-- [ ] mp4box.js integration for proper MP4 muxing
-- [ ] Web Worker for PDF processing
-- [ ] ZIP bundled batch downloads
-- [ ] Drag-to-reorder file list
-- [ ] Preview before/after comparison
-- [ ] GIF optimization
+MIT — see [LICENSE](LICENSE).
