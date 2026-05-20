@@ -68,7 +68,7 @@ export async function optimizeSvg(
 	let previousSvg: string;
 	do {
 		previousSvg = svg;
-		svg = svg.replace(/<script\b[^>]*(?:\/>|>[\s\S]*?<\/script>)/gi, '');
+		svg = svg.replace(/<script\b[^>]*(?:\/>|>[\s\S]*?<\/script(?:\s[^>]*)?>)/gi, '');
 	} while (svg !== previousSvg);
 
 	// Remove display:none and visibility:hidden elements entirely
