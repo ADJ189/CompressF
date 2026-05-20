@@ -30,7 +30,13 @@ export async function optimizeSvg(
 	svg = svg.replace(/<\?xml[^?]*\?>/gi, '');
 
 	// 2. Remove comments
-	svg = svg.replace(/<!--[\s\S]*?-->/g, '');
+	{
+		let previous: string;
+		do {
+			previous = svg;
+			svg = svg.replace(/<!--[\s\S]*?-->/g, '');
+		} while (svg !== previous);
+	}
 
 	// 3. Remove editor namespaces and metadata blocks
 	// Inkscape, Illustrator, Sketch, Figma metadata
