@@ -70,7 +70,14 @@ export async function optimizeSvg(
 	// 8. Remove style attributes with only default/redundant values
 	svg = svg.replace(/\s+style="(fill:none;)?(stroke:none;)?(opacity:1;)?"/gi, '');
 
-	// 9. Remove display:none and visibility:hidden elements entirely
+	// 9. Remove script tags iteratively to avoid incomplete multi-character sanitization
+	let previousSvg: string;
+	do {
+		previousSvg = svg;
+		svg = svg.replace(/<script\b[^>]*(?:\/>|>[\s\S]*?<\/script(?:\s[^>]*)?>)/gi, '');
+	} while (svg !== previousSvg);
+
+	// Remove display:none and visibility:hidden elements entirely
 	svg = svg.replace(/<[^>]+(?:display\s*:\s*none|visibility\s*:\s*hidden)[^>]*(\/?>|[\s\S]*?<\/[a-z]+>)/gi, '');
 
 	// 10. Collapse redundant whitespace between tags
