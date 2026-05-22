@@ -1,56 +1,44 @@
 import type { CompressOptions, CompressResult } from './types';
 
 /**
- * PDF compression engine — fully rewritten and tested against the error checklist.
+ * PDF compression engine.
  *
- * Bugs fixed vs previous version:
+ * Pipeline (proven from reference implementation):
+ *  1. Load PDF.js from CDN — renders pages to canvas accurately
+ *  2. For each page: render to canvas → re-encode as JPEG via canvas.toDataURL
+ *  3. Use pdf-lib PDFDocument.create() + embedJpg() + drawImage()
+ *  4. Save with useObjectStreams: true (smaller output, valid xref streams)
  *
- * BUG 1 (CRITICAL — blank pages): Content stream was written AFTER "endobj"
- *   with no object header. PDF spec requires /Contents to point to a separate
- *   stream object (N 0 obj / stream / endstream / endobj). Fixed: content
- *   stream is now its own numbered object.
+ * Why pdf-lib instead of hand-rolled assembler:
+ *  - pdf-lib handles all xref table construction, object numbering, stream encoding
+ *  - embedJpg validates the JPEG data before writing
+ *  - save() produces PDF/1.7 compatible output readable by all viewers
+ *  - No xref byte-offset bugs, no content stream header bugs
  *
- * BUG 2 (CRITICAL — corrupted xref): Object numbering was mixed up. The
- *   layout is now strictly: 1=catalog, 2=pages, then per-page triplets of
- *   (contentStream, page, imageXObject). xref table rebuilt accordingly.
- *
- * BUG 3 (CRITICAL — truncated image data): imgData.buffer returns the FULL
- *   backing ArrayBuffer of a Uint8Array view — if the view is a slice, this
- *   gives extra bytes. Fixed: use blob.arrayBuffer() directly → new Uint8Array().
- *   Per checklist §6: "Correct slice: buffer.slice(byteOffset, byteOffset+length)".
- *
- * BUG 4 (CRITICAL — Adobe Acrobat blank): stream keyword must be followed by
- *   exactly one newline (\n), not \r\n, and binary data must start immediately.
- *   endstream must be on its own line preceded by \n.
- *
- * BUG 5 (iOS Safari blank after download): URL.revokeObjectURL called too early.
- *   Fixed at the download call site — revoke after 10s not immediately.
- *
- * Rendering fixes (from PDF.js issue tracker):
- *   - Canvas dimensions set BEFORE getContext('2d')
- *   - page.render().promise awaited (not the RenderTask object)
- *   - Pages rendered SEQUENTIALLY (parallel = canvas state conflicts)
- *   - cMapUrl provided to handle CJK/symbol fonts
- *   - White background painted before render (JPEG transparency fix)
- *   - page.cleanup() called after each render to free GPU memory
- *
- * Browser-specific optimisations:
- *   - Chrome/Edge: willReadFrequently hint for faster getImageData
- *   - Safari: alpha:false context hint avoids premultiplied alpha issues
- *   - Firefox: explicit canvas reset between pages
+ * Browser optimisations:
+ *  - Chrome/Edge: alpha:false canvas hint avoids compositing overhead
+ *  - Safari: explicit white fill prevents transparent-to-black artefacts
+ *  - Firefox: canvas.width=0 after use frees GPU memory immediately
+ *  - All: pages rendered sequentially (parallel = canvas state conflicts)
  */
 
-// ── PDF.js singleton loader ───────────────────────────────────────────────────
+export type PdfCompressionLevel = 'low' | 'recommended' | 'extreme';
+
+const PRESETS: Record<PdfCompressionLevel, { quality: number; scale: number }> = {
+	low:         { quality: 0.92, scale: 2.0 },
+	recommended: { quality: 0.75, scale: 1.5 },
+	extreme:     { quality: 0.30, scale: 1.0 },
+};
+
+// ── PDF.js singleton ──────────────────────────────────────────────────────────
 
 let _pdfjsPromise: Promise<any> | null = null;
 
 async function getPdfJs(): Promise<any> {
 	if (_pdfjsPromise) return _pdfjsPromise;
-
 	_pdfjsPromise = new Promise((resolve, reject) => {
 		if ((window as any).pdfjsLib) {
 			const lib = (window as any).pdfjsLib;
-			// Ensure worker is set even if lib was already loaded
 			if (!lib.GlobalWorkerOptions.workerSrc) {
 				lib.GlobalWorkerOptions.workerSrc =
 					'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
@@ -58,43 +46,21 @@ async function getPdfJs(): Promise<any> {
 			resolve(lib);
 			return;
 		}
-
-		const script   = document.createElement('script');
-		script.src     = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
-		script.async   = true;
-
-		script.onload = () => {
+		const s = document.createElement('script');
+		s.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+		s.async = true;
+		s.onload = () => {
 			const lib = (window as any).pdfjsLib;
-			if (!lib) {
-				reject(new Error('PDF.js loaded but window.pdfjsLib is undefined'));
-				return;
-			}
-			// MUST set workerSrc before any getDocument() call
+			if (!lib) { _pdfjsPromise = null; reject(new Error('PDF.js did not expose pdfjsLib')); return; }
 			lib.GlobalWorkerOptions.workerSrc =
 				'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 			resolve(lib);
 		};
-
-		script.onerror = () => {
-			_pdfjsPromise = null; // allow retry
-			reject(new Error('Failed to load PDF.js from CDN. Check network connection.'));
-		};
-
-		document.head.appendChild(script);
+		s.onerror = () => { _pdfjsPromise = null; reject(new Error('Failed to load PDF.js from CDN')); };
+		document.head.appendChild(s);
 	});
-
 	return _pdfjsPromise;
 }
-
-// ── Compression presets ───────────────────────────────────────────────────────
-
-export type PdfCompressionLevel = 'low' | 'recommended' | 'extreme';
-
-const PRESETS: Record<PdfCompressionLevel, { quality: number; scale: number }> = {
-	low:         { quality: 0.92, scale: 2.0 },
-	recommended: { quality: 0.82, scale: 1.8 },
-	extreme:     { quality: 0.55, scale: 1.2 },
-};
 
 // ── Main export ───────────────────────────────────────────────────────────────
 
@@ -105,338 +71,143 @@ export async function compressPdf(
 ): Promise<CompressResult> {
 	onProgress?.(2);
 
+	// Load PDF.js
 	const pdfjs = await getPdfJs();
 	onProgress?.(8);
 
-	// Pass a copy of the ArrayBuffer — PDF.js may transfer/detach the original
-	const arrayBuffer = (await file.arrayBuffer()).slice(0);
-
-	// Validate: try to detect encrypted/damaged PDFs early
-	const header = new Uint8Array(arrayBuffer, 0, 5);
-	const headerStr = String.fromCharCode(...header);
-	if (!headerStr.startsWith('%PDF')) {
-		throw new Error('File does not appear to be a valid PDF (missing %PDF header)');
+	// Validate header
+	const headerBuf = await file.slice(0, 5).arrayBuffer();
+	const header = new TextDecoder().decode(headerBuf);
+	if (!header.startsWith('%PDF')) {
+		throw new Error('Not a valid PDF file (missing %PDF header)');
 	}
 
-	const pdf = await pdfjs.getDocument({
-		data:         arrayBuffer,
-		cMapUrl:      'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/cmaps/',
-		cMapPacked:   true,
-		// Disable range requests — load full file (avoids partial-load blank pages)
-		disableRange:    true,
-		disableStream:   true,
+	// Parse source document with PDF.js
+	const srcBuf = await file.arrayBuffer();
+	const pdfDoc = await pdfjs.getDocument({
+		data:             new Uint8Array(srcBuf),
+		cMapUrl:          'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/cmaps/',
+		cMapPacked:       true,
+		disableRange:     true,
+		disableStream:    true,
 		disableAutoFetch: true,
 	}).promise;
 
 	onProgress?.(12);
 
-	const numPages = pdf.numPages;
 	const level    = (options.pdfCompressionLevel as PdfCompressionLevel) ?? 'recommended';
 	const preset   = PRESETS[level] ?? PRESETS.recommended;
 	const quality  = options.quality ?? preset.quality;
 	const scale    = options.pdfRenderScale ?? preset.scale;
-	const imgFmt   = options.pdfImageFormat ?? 'image/jpeg';
+	const numPages = pdfDoc.numPages;
 
-	// Render all pages SEQUENTIALLY — parallel causes canvas state conflicts (checklist §8)
-	const pageData: PageData[] = [];
+	// pdf-lib: create new document to receive compressed pages
+	const { PDFDocument } = await import('pdf-lib');
+	const newPdf = await PDFDocument.create();
 
+	// Detect browser for optimisations
+	const ua        = navigator.userAgent;
+	const isSafari  = /^((?!chrome|android).)*safari/i.test(ua);
+	const isFirefox = ua.includes('Firefox/');
+
+	// Render each page SEQUENTIALLY into the new PDF
 	for (let pageNum = 1; pageNum <= numPages; pageNum++) {
-		const pd = await renderPage(pdf, pageNum, scale, quality, imgFmt, options.targetSizeKB, numPages);
-		pageData.push(pd);
-		onProgress?.(12 + Math.round((pageNum / numPages) * 72));
+		const page     = await pdfDoc.getPage(pageNum);
+		const viewport = page.getViewport({ scale });
+
+		// Canvas dimensions must be integers
+		const w = Math.floor(viewport.width);
+		const h = Math.floor(viewport.height);
+
+		// CRITICAL: set dimensions BEFORE getContext
+		const canvas   = document.createElement('canvas');
+		canvas.width   = w;
+		canvas.height  = h;
+
+		const ctx = canvas.getContext('2d', {
+			alpha: false,              // prevents premultiplied alpha issues in Safari
+			willReadFrequently: false, // we only encode, not read back pixels
+		}) as CanvasRenderingContext2D | null;
+
+		if (!ctx) throw new Error(`Canvas 2D unavailable for page ${pageNum}`);
+
+		// White background — required for JPEG (no transparency support)
+		ctx.fillStyle = '#ffffff';
+		ctx.fillRect(0, 0, w, h);
+
+		// CRITICAL: await .promise on the RenderTask, not the task itself
+		await page.render({ canvasContext: ctx, viewport }).promise;
+
+		// Free GPU/font memory for this page
+		page.cleanup();
+
+		// Encode page as JPEG data URL — this is what the reference implementation uses
+		// toDataURL returns a base64 data URL which pdf-lib's embedJpg accepts directly
+		let jpegDataUrl: string;
+		if (options.targetSizeKB && options.targetSizeKB > 0) {
+			// Binary search quality to hit target per-page size
+			const perPageTarget = (options.targetSizeKB * 1024) / numPages;
+			jpegDataUrl = await binarySearchDataUrl(canvas, perPageTarget);
+		} else {
+			jpegDataUrl = canvas.toDataURL('image/jpeg', quality);
+		}
+
+		// Embed the JPEG into the new PDF (pdf-lib validates the JPEG data)
+		const embeddedImg = await newPdf.embedJpg(jpegDataUrl);
+
+		// Add page with exact pixel dimensions — pdf-lib uses points = pixels here
+		// since we're just mapping 1:1 (no DPI conversion needed for screen rendering)
+		const newPage = newPdf.addPage([w, h]);
+		newPage.drawImage(embeddedImg, { x: 0, y: 0, width: w, height: h });
+
+		// Explicit memory cleanup (Firefox GPU memory leak fix)
+		canvas.width  = 0;
+		canvas.height = 0;
+
+		onProgress?.(12 + Math.round((pageNum / numPages) * 82));
 	}
 
-	// Destroy PDF document to free memory
-	await pdf.destroy();
-	onProgress?.(85);
+	await pdfDoc.destroy();
+	onProgress?.(95);
 
-	const pdfBytes = await assemblePdf(pageData, scale);
+	// Save — useObjectStreams produces xref streams (smaller, PDF 1.5+)
+	const pdfBytes = await newPdf.save({ useObjectStreams: true });
+
+	// CRITICAL (checklist §6): correct Uint8Array → ArrayBuffer conversion
+	// pdfBytes is already a Uint8Array — Blob accepts it directly
+	const blob = new Blob([pdfBytes], { type: 'application/pdf' });
+
+	if (blob.size < 100) {
+		throw new Error(`Output suspiciously small (${blob.size} bytes) — pdf-lib save failed`);
+	}
+
 	onProgress?.(100);
 
-	// Validate output is non-trivially small
-	if (pdfBytes.length < 200) {
-		throw new Error(`Output PDF is suspiciously small (${pdfBytes.length} bytes) — assembly may have failed`);
-	}
-
-	const outBlob = new Blob([pdfBytes], { type: 'application/pdf' });
-
 	return {
-		blob:             outBlob,
+		blob,
 		originalSize:     file.size,
-		compressedSize:   outBlob.size,
-		compressionRatio: file.size / outBlob.size,
-		format:           `PDF · ${level} compression`,
+		compressedSize:   blob.size,
+		compressionRatio: file.size / blob.size,
+		format:           `PDF · ${level} · pdf-lib`,
 	};
 }
 
-// ── Page data type ────────────────────────────────────────────────────────────
+// ── Binary search quality for target size ─────────────────────────────────────
 
-interface PageData {
-	blob: Blob;
-	w:    number;
-	h:    number;
-}
-
-// ── Page renderer ─────────────────────────────────────────────────────────────
-
-async function renderPage(
-	pdf: any,
-	pageNum: number,
-	scale: number,
-	quality: number,
-	imgFmt: string,
-	targetSizeKB: number | undefined,
-	totalPages: number
-): Promise<PageData> {
-	const page     = await pdf.getPage(pageNum);
-	const viewport = page.getViewport({ scale });
-
-	// Dimensions must be integers (fractional px = render artefacts)
-	const w = Math.ceil(viewport.width);
-	const h = Math.ceil(viewport.height);
-
-	// CRITICAL (checklist §1, §8): set canvas dimensions BEFORE getContext()
-	const canvas   = document.createElement('canvas');
-	canvas.width   = w;
-	canvas.height  = h;
-
-	// Browser-specific context hints
-	const isSafari  = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
-	const isFirefox = navigator.userAgent.includes('Firefox/');
-
-	const ctx = canvas.getContext('2d', {
-		// Avoid premultiplied alpha issues in Safari (causes colour shift in JPEGs)
-		alpha: false,
-		// Chrome/Edge: faster pixel readback
-		willReadFrequently: false,
-	}) as CanvasRenderingContext2D | null;
-
-	if (!ctx) throw new Error(`Canvas 2D unavailable for page ${pageNum}`);
-
-	// White background — required for JPEG (no alpha channel)
-	// Also prevents "black image" in PDFs with transparent backgrounds
-	ctx.fillStyle = '#ffffff';
-	ctx.fillRect(0, 0, w, h);
-
-	// CRITICAL (checklist §1): await .promise, not the RenderTask object itself
-	const renderTask = page.render({ canvasContext: ctx, viewport });
-	await renderTask.promise;
-
-	// Release page resources (font data, image data) immediately
-	page.cleanup();
-
-	// Firefox: explicit reset prevents stale pixel data bleeding between pages
-	if (isFirefox) {
-		ctx.clearRect(0, 0, w, h);
-	}
-
-	// Encode to image blob
-	let blob: Blob;
-	if (targetSizeKB && targetSizeKB > 0) {
-		const perPageTarget = (targetSizeKB * 1024) / totalPages;
-		blob = await binarySearchQuality(canvas, imgFmt, perPageTarget);
-	} else {
-		blob = await canvasToBlob(canvas, imgFmt, quality);
-	}
-
-	// Null-check: toBlob can return null in some edge cases
-	if (!blob || blob.size === 0) {
-		throw new Error(`Page ${pageNum}: image encoding returned empty blob`);
-	}
-
-	return { blob, w, h };
-}
-
-async function binarySearchQuality(
-	canvas: HTMLCanvasElement,
-	fmt: string,
-	targetBytes: number
-): Promise<Blob> {
-	// PNG is lossless — quality param has no effect
-	if (fmt === 'image/png') return canvasToBlob(canvas, fmt, 1);
-
-	let lo = 0.1, hi = 0.95, best: Blob | null = null;
+async function binarySearchDataUrl(canvas: HTMLCanvasElement, targetBytes: number): Promise<string> {
+	let lo = 0.1, hi = 0.95, best: string | null = null;
 
 	for (let i = 0; i < 12; i++) {
-		const mid  = (lo + hi) / 2;
-		const blob = await canvasToBlob(canvas, fmt, mid);
-		if (blob.size <= targetBytes) { best = blob; lo = mid; }
+		const mid     = (lo + hi) / 2;
+		const dataUrl = canvas.toDataURL('image/jpeg', mid);
+		// Data URL size estimate: base64 is 4/3 of binary
+		const binarySize = Math.round((dataUrl.length - 'data:image/jpeg;base64,'.length) * 3 / 4);
+
+		if (binarySize <= targetBytes) { best = dataUrl; lo = mid; }
 		else hi = mid;
+
 		if (hi - lo < 0.008) break;
 	}
 
-	return best ?? canvasToBlob(canvas, fmt, lo);
-}
-
-function canvasToBlob(canvas: HTMLCanvasElement, fmt: string, quality: number): Promise<Blob> {
-	return new Promise((resolve, reject) => {
-		canvas.toBlob(
-			(blob) => {
-				if (blob && blob.size > 0) resolve(blob);
-				else reject(new Error(`toBlob returned ${blob ? 'zero-size' : 'null'} for ${fmt}`));
-			},
-			fmt,
-			Math.max(0.01, Math.min(1, quality))
-		);
-	});
-}
-
-// ── PDF assembler — fixed object layout and xref ──────────────────────────────
-//
-// Object layout per page i (0-indexed):
-//   Object (3 + i*3 + 0) = content stream  ← THE FIX: separate stream object
-//   Object (3 + i*3 + 1) = page dictionary (references content stream + image)
-//   Object (3 + i*3 + 2) = image XObject
-//
-// Global objects:
-//   Object 1 = Catalog
-//   Object 2 = Pages
-//   Objects 3..3+n*3-1 = per-page triplets (content, page, image)
-//
-// This layout satisfies PDF spec §7.7.3 (page tree) and §7.8.2 (content streams).
-
-async function assemblePdf(pages: PageData[], scale: number): Promise<Uint8Array> {
-	const enc    = new TextEncoder();
-	const parts: Uint8Array[] = [];
-	// xrefs[objNum] = byte offset of that object in the file
-	// Using a Map to avoid sparse array issues
-	const xrefs  = new Map<number, number>();
-	let offset   = 0;
-
-	function write(s: string) {
-		const b = enc.encode(s);
-		parts.push(b);
-		offset += b.length;
-	}
-
-	// CRITICAL (checklist §4): binary data requires exact byte-accurate writes
-	// writeRaw must NOT encode through TextEncoder (that would corrupt binary)
-	function writeRaw(data: Uint8Array) {
-		// Write a fresh copy — avoids shared-buffer issues (checklist §6)
-		const copy = new Uint8Array(data.length);
-		copy.set(data);
-		parts.push(copy);
-		offset += copy.length;
-	}
-
-	// PDF header — %PDF-1.5 + 4 high bytes signals binary content to tools
-	write('%PDF-1.5\n%\xFF\xFE\xFD\xFC\n');
-
-	const n      = pages.length;
-	// Object IDs
-	const catId  = 1;
-	const pgsId  = 2;
-	// Per page i: contentId=3+i*3, pageId=3+i*3+1, imgId=3+i*3+2
-	const totalPageObjs = n * 3;
-	const totalObjs     = 2 + totalPageObjs; // catalog + pages + n*(content+page+image)
-
-	// ── Object 2: Pages dictionary ──────────────────────────────────────────
-
-	xrefs.set(pgsId, offset);
-	const kidsRefs = Array.from({ length: n }, (_, i) => `${3 + i * 3 + 1} 0 R`).join(' ');
-	write(`2 0 obj\n<< /Type /Pages /Kids [${kidsRefs}] /Count ${n} >>\nendobj\n`);
-
-	// ── Per-page objects ─────────────────────────────────────────────────────
-
-	// Read all image bytes first — blob.arrayBuffer() gives a fresh ArrayBuffer
-	// (not a view into a larger buffer, so .buffer is safe — but we slice anyway)
-	const imgArrayBuffers = await Promise.all(
-		pages.map(p => p.blob.arrayBuffer())
-	);
-
-	for (let i = 0; i < n; i++) {
-		const { w, h } = pages[i];
-
-		// Convert pixels → PDF user-space points
-		// At scale S, rendered at 96dpi: points = pixels / (S * 96/72) = pixels * 72 / (S * 96)
-		const ptW = (w * 72 / (scale * 96)).toFixed(4);
-		const ptH = (h * 72 / (scale * 96)).toFixed(4);
-
-		const contentId = 3 + i * 3;
-		const pageId    = 3 + i * 3 + 1;
-		const imgId     = 3 + i * 3 + 2;
-
-		// ── Content stream object (THE FIX for blank pages) ─────────────────
-		// PDF spec: /Contents must reference a stream object, not an inline dict.
-		// "q ... cm /Im Do Q" is the graphics state operator sequence.
-		const ops = `q ${ptW} 0 0 ${ptH} 0 0 cm /Im${i} Do Q`;
-
-		xrefs.set(contentId, offset);
-		write(`${contentId} 0 obj\n`);
-		write(`<< /Length ${ops.length} >>\n`);
-		// CRITICAL (checklist §4): exactly one \n after "stream", one \n before "endstream"
-		write(`stream\n`);
-		write(ops);
-		write(`\nendstream\nendobj\n`);
-
-		// ── Page object ──────────────────────────────────────────────────────
-		xrefs.set(pageId, offset);
-		write(`${pageId} 0 obj\n`);
-		write(`<< /Type /Page\n`);
-		write(`   /Parent ${pgsId} 0 R\n`);
-		write(`   /MediaBox [0 0 ${ptW} ${ptH}]\n`);
-		write(`   /Contents ${contentId} 0 R\n`);
-		write(`   /Resources << /XObject << /Im${i} ${imgId} 0 R >> >>\n`);
-		write(`>>\nendobj\n`);
-
-		// ── Image XObject ────────────────────────────────────────────────────
-		// CRITICAL (checklist §6): get exact bytes from ArrayBuffer, not .buffer of a view
-		const rawBuf   = imgArrayBuffers[i];
-		const imgBytes = new Uint8Array(rawBuf, 0, rawBuf.byteLength);
-
-		const isJpeg   = pages[i].blob.type.includes('jpeg');
-		// JPEG → DCTDecode, PNG → FlateDecode (PNG is already Deflate-compressed)
-		const filter   = isJpeg ? '/DCTDecode' : '/FlateDecode';
-
-		xrefs.set(imgId, offset);
-		write(`${imgId} 0 obj\n`);
-		write(`<< /Type /XObject /Subtype /Image\n`);
-		write(`   /Width ${w} /Height ${h}\n`);
-		write(`   /ColorSpace /DeviceRGB /BitsPerComponent 8\n`);
-		write(`   /Filter ${filter}\n`);
-		write(`   /Length ${imgBytes.length}\n`);
-		write(`>>\n`);
-		// CRITICAL: stream\n then BINARY data then \nendstream — no extra bytes
-		write(`stream\n`);
-		writeRaw(imgBytes);
-		write(`\nendstream\nendobj\n`);
-	}
-
-	// ── Catalog (object 1) ───────────────────────────────────────────────────
-	xrefs.set(catId, offset);
-	write(`1 0 obj\n<< /Type /Catalog /Pages ${pgsId} 0 R >>\nendobj\n`);
-
-	// ── Cross-reference table ────────────────────────────────────────────────
-	// xref entries must be exactly 20 bytes each (including \r\n or ' \n')
-	// Format: "nnnnnnnnnn ggggg n \r\n" or "nnnnnnnnnn ggggg n \n" (20 bytes)
-	// Format: "nnnnnnnnnn 00000 n\r\n" = 10+1+5+1+1+2 = 20 bytes exactly (PDF spec §7.5.4)
-	const xrefOffset = offset;
-	write(`xref\n`);
-	write(`0 ${totalObjs + 1}\n`);
-	// Object 0: free object header (20 bytes exactly)
-	write(`0000000000 65535 f\r\n`);
-	// Objects 1..totalObjs
-	for (let objNum = 1; objNum <= totalObjs; objNum++) {
-		const off = xrefs.get(objNum) ?? 0;
-		// Pad to 10 digits, generation 00000, 'n', space, \r\n = 20 bytes total
-		write(`${String(off).padStart(10, '0')} 00000 n\r\n`);
-	}
-
-	// ── Trailer ──────────────────────────────────────────────────────────────
-	write(`trailer\n`);
-	write(`<< /Size ${totalObjs + 1} /Root ${catId} 0 R >>\n`);
-	write(`startxref\n`);
-	write(`${xrefOffset}\n`);
-	write(`%%EOF\n`);
-
-	// Assemble all parts into a single Uint8Array
-	const totalLen = parts.reduce((acc, p) => acc + p.length, 0);
-	const out      = new Uint8Array(totalLen);
-	let   pos      = 0;
-	for (const p of parts) {
-		out.set(p, pos);
-		pos += p.length;
-	}
-
-	return out;
+	return best ?? canvas.toDataURL('image/jpeg', lo);
 }
