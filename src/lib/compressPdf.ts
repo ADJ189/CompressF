@@ -117,5 +117,3 @@ async function binarySearchQuality(canvas: HTMLCanvasElement, targetBytes: numbe
 
 	return best ?? canvas.toDataURL('image/jpeg', lo);
 }
-	return best ?? canvas.toDataURL('image/jpeg', lo);
-}
