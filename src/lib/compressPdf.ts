@@ -1,68 +1,23 @@
 import type { CompressOptions, CompressResult } from './types';
 
 /**
- * PDF compression engine.
+ * PDF compression engine — ported directly from reference implementation.
  *
- * Pipeline (proven from reference implementation):
- *  1. Load PDF.js from CDN — renders pages to canvas accurately
- *  2. For each page: render to canvas → re-encode as JPEG via canvas.toDataURL
- *  3. Use pdf-lib PDFDocument.create() + embedJpg() + drawImage()
- *  4. Save with useObjectStreams: true (smaller output, valid xref streams)
- *
- * Why pdf-lib instead of hand-rolled assembler:
- *  - pdf-lib handles all xref table construction, object numbering, stream encoding
- *  - embedJpg validates the JPEG data before writing
- *  - save() produces PDF/1.7 compatible output readable by all viewers
- *  - No xref byte-offset bugs, no content stream header bugs
- *
- * Browser optimisations:
- *  - Chrome/Edge: alpha:false canvas hint avoids compositing overhead
- *  - Safari: explicit white fill prevents transparent-to-black artefacts
- *  - Firefox: canvas.width=0 after use frees GPU memory immediately
- *  - All: pages rendered sequentially (parallel = canvas state conflicts)
+ * Uses pdfjs-dist (npm package, dynamic import) + pdf-lib.
+ * This is the exact pipeline from the working reference:
+ *  1. Dynamic import pdfjs-dist — gets correct version, sets workerSrc from it
+ *  2. Render each page to canvas sequentially
+ *  3. canvas.toDataURL('image/jpeg', quality) — re-encode as JPEG
+ *  4. pdf-lib embedJpg + drawImage + save({ useObjectStreams: true })
  */
 
 export type PdfCompressionLevel = 'low' | 'recommended' | 'extreme';
 
 const PRESETS: Record<PdfCompressionLevel, { quality: number; scale: number }> = {
-	low:         { quality: 0.92, scale: 2.0 },
-	recommended: { quality: 0.75, scale: 1.5 },
+	low:         { quality: 0.85, scale: 2.0 },
+	recommended: { quality: 0.60, scale: 1.5 },
 	extreme:     { quality: 0.30, scale: 1.0 },
 };
-
-// ── PDF.js singleton ──────────────────────────────────────────────────────────
-
-let _pdfjsPromise: Promise<any> | null = null;
-
-async function getPdfJs(): Promise<any> {
-	if (_pdfjsPromise) return _pdfjsPromise;
-	_pdfjsPromise = new Promise((resolve, reject) => {
-		if ((window as any).pdfjsLib) {
-			const lib = (window as any).pdfjsLib;
-			if (!lib.GlobalWorkerOptions.workerSrc) {
-				lib.GlobalWorkerOptions.workerSrc =
-					'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-			}
-			resolve(lib);
-			return;
-		}
-		const s = document.createElement('script');
-		s.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
-		s.async = true;
-		s.onload = () => {
-			const lib = (window as any).pdfjsLib;
-			if (!lib) { _pdfjsPromise = null; reject(new Error('PDF.js did not expose pdfjsLib')); return; }
-			lib.GlobalWorkerOptions.workerSrc =
-				'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-			resolve(lib);
-		};
-		s.onerror = () => { _pdfjsPromise = null; reject(new Error('Failed to load PDF.js from CDN')); };
-		document.head.appendChild(s);
-	});
-	return _pdfjsPromise;
-}
-
-// ── Main export ───────────────────────────────────────────────────────────────
 
 export async function compressPdf(
 	file: File,
@@ -71,139 +26,117 @@ export async function compressPdf(
 ): Promise<CompressResult> {
 	onProgress?.(2);
 
-	// Load PDF.js
-	const pdfjs = await getPdfJs();
+	const level   = (options.pdfCompressionLevel as PdfCompressionLevel) ?? 'recommended';
+	const preset  = PRESETS[level] ?? PRESETS.recommended;
+	const quality = options.quality ?? preset.quality;
+	const scale   = options.pdfRenderScale ?? preset.scale;
+
+	// ── Step 1: Load pdfjs-dist via dynamic import (reference pattern) ────────
+	// Dynamic import gives us the installed version string so workerSrc is always correct.
+	const pdfjsLib = await import('pdfjs-dist');
+	const workerVersion = (pdfjsLib as any).version || '5.7.284';
+
+	// Version 4+ uses .mjs worker, older uses .js
+	const isModern = parseInt(workerVersion.split('.')[0]) >= 4;
+	(pdfjsLib as any).GlobalWorkerOptions.workerSrc =
+		`https://cdn.jsdelivr.net/npm/pdfjs-dist@${workerVersion}/build/pdf.worker.min.${isModern ? 'mjs' : 'js'}`;
+
 	onProgress?.(8);
 
-	// Validate header
-	const headerBuf = await file.slice(0, 5).arrayBuffer();
-	const header = new TextDecoder().decode(headerBuf);
-	if (!header.startsWith('%PDF')) {
-		throw new Error('Not a valid PDF file (missing %PDF header)');
-	}
-
-	// Parse source document with PDF.js
-	const srcBuf = await file.arrayBuffer();
-	const pdfDoc = await pdfjs.getDocument({
-		data:             new Uint8Array(srcBuf),
-		cMapUrl:          'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/cmaps/',
-		cMapPacked:       true,
-		disableRange:     true,
-		disableStream:    true,
-		disableAutoFetch: true,
-	}).promise;
+	// ── Step 2: Parse source PDF ───────────────────────────────────────────────
+	const arrayBuffer = await file.arrayBuffer();
+	const loadingTask = (pdfjsLib as any).getDocument({
+		data:                new Uint8Array(arrayBuffer),
+		cMapUrl:             `https://cdn.jsdelivr.net/npm/pdfjs-dist@${workerVersion}/cmaps/`,
+		cMapPacked:          true,
+		// standardFontDataUrl is critical for text-heavy PDFs (missing in old engine)
+		standardFontDataUrl: `https://cdn.jsdelivr.net/npm/pdfjs-dist@${workerVersion}/standard_fonts/`,
+	});
+	const pdf = await loadingTask.promise;
 
 	onProgress?.(12);
 
-	const level    = (options.pdfCompressionLevel as PdfCompressionLevel) ?? 'recommended';
-	const preset   = PRESETS[level] ?? PRESETS.recommended;
-	const quality  = options.quality ?? preset.quality;
-	const scale    = options.pdfRenderScale ?? preset.scale;
-	const numPages = pdfDoc.numPages;
-
-	// pdf-lib: create new document to receive compressed pages
+	// ── Step 3: Create new pdf-lib document ───────────────────────────────────
 	const { PDFDocument } = await import('pdf-lib');
-	const newPdf = await PDFDocument.create();
+	const newPdf    = await PDFDocument.create();
+	const totalPages = pdf.numPages;
 
-	// Detect browser for optimisations
-	const ua        = navigator.userAgent;
-	const isSafari  = /^((?!chrome|android).)*safari/i.test(ua);
-	const isFirefox = ua.includes('Firefox/');
-
-	// Render each page SEQUENTIALLY into the new PDF
-	for (let pageNum = 1; pageNum <= numPages; pageNum++) {
-		const page     = await pdfDoc.getPage(pageNum);
+	// ── Step 4: Render each page sequentially ─────────────────────────────────
+	for (let i = 1; i <= totalPages; i++) {
+		const page     = await pdf.getPage(i);
 		const viewport = page.getViewport({ scale });
 
-		// Canvas dimensions must be integers
-		const w = Math.floor(viewport.width);
-		const h = Math.floor(viewport.height);
-
-		// CRITICAL: set dimensions BEFORE getContext
 		const canvas   = document.createElement('canvas');
-		canvas.width   = w;
-		canvas.height  = h;
+		canvas.width   = Math.floor(viewport.width);
+		canvas.height  = Math.floor(viewport.height);
 
-		const ctx = canvas.getContext('2d', {
-			alpha: false,              // prevents premultiplied alpha issues in Safari
-			willReadFrequently: false, // we only encode, not read back pixels
-		}) as CanvasRenderingContext2D | null;
+		const ctx = canvas.getContext('2d');
+		if (!ctx) throw new Error('Could not acquire 2D rendering context.');
 
-		if (!ctx) throw new Error(`Canvas 2D unavailable for page ${pageNum}`);
-
-		// White background — required for JPEG (no transparency support)
+		// White background — required for JPEG (transparent PDFs go black otherwise)
 		ctx.fillStyle = '#ffffff';
-		ctx.fillRect(0, 0, w, h);
+		ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-		// CRITICAL: await .promise on the RenderTask, not the task itself
+		// Render — await .promise on the RenderTask
 		await page.render({ canvasContext: ctx, viewport }).promise;
 
-		// Free GPU/font memory for this page
-		page.cleanup();
-
-		// Encode page as JPEG data URL — this is what the reference implementation uses
-		// toDataURL returns a base64 data URL which pdf-lib's embedJpg accepts directly
-		let jpegDataUrl: string;
+		// JPEG re-encode with quality control
+		let imgDataUrl: string;
 		if (options.targetSizeKB && options.targetSizeKB > 0) {
-			// Binary search quality to hit target per-page size
-			const perPageTarget = (options.targetSizeKB * 1024) / numPages;
-			jpegDataUrl = await binarySearchDataUrl(canvas, perPageTarget);
+			imgDataUrl = await binarySearchQuality(canvas, (options.targetSizeKB * 1024) / totalPages);
 		} else {
-			jpegDataUrl = canvas.toDataURL('image/jpeg', quality);
+			imgDataUrl = canvas.toDataURL('image/jpeg', quality);
 		}
 
-		// Embed the JPEG into the new PDF (pdf-lib validates the JPEG data)
-		const embeddedImg = await newPdf.embedJpg(jpegDataUrl);
+		// Embed into new PDF
+		const embeddedImg = await newPdf.embedJpg(imgDataUrl);
+		const newPage     = newPdf.addPage([canvas.width, canvas.height]);
+		newPage.drawImage(embeddedImg, { x: 0, y: 0, width: canvas.width, height: canvas.height });
 
-		// Add page with exact pixel dimensions — pdf-lib uses points = pixels here
-		// since we're just mapping 1:1 (no DPI conversion needed for screen rendering)
-		const newPage = newPdf.addPage([w, h]);
-		newPage.drawImage(embeddedImg, { x: 0, y: 0, width: w, height: h });
-
-		// Explicit memory cleanup (Firefox GPU memory leak fix)
+		// Cleanup (reference pattern — frees GPU memory, especially on Firefox)
 		canvas.width  = 0;
 		canvas.height = 0;
+		page.cleanup();
 
-		onProgress?.(12 + Math.round((pageNum / numPages) * 82));
+		onProgress?.(12 + Math.floor((i / totalPages) * 82));
 	}
 
-	await pdfDoc.destroy();
+	await pdf.destroy();
 	onProgress?.(95);
 
-	// Save — useObjectStreams produces xref streams (smaller, PDF 1.5+)
-	const pdfBytes = await newPdf.save({ useObjectStreams: true });
+	// ── Step 5: Save (reference uses useObjectStreams: true) ──────────────────
+	const compressedPdfBytes = await newPdf.save({ useObjectStreams: true });
 
-	// CRITICAL (checklist §6): correct Uint8Array → ArrayBuffer conversion
-	// pdfBytes is already a Uint8Array — Blob accepts it directly
-	const blob = new Blob([pdfBytes], { type: 'application/pdf' });
+	// Explicit Uint8Array wrapping — per reference implementation
+	const finalBlob = new Blob([new Uint8Array(compressedPdfBytes)], { type: 'application/pdf' });
 
-	if (blob.size < 100) {
-		throw new Error(`Output suspiciously small (${blob.size} bytes) — pdf-lib save failed`);
+	if (finalBlob.size < 200) {
+		throw new Error(`Output too small (${finalBlob.size} bytes) — compression failed`);
 	}
 
 	onProgress?.(100);
 
 	return {
-		blob,
+		blob:             finalBlob,
 		originalSize:     file.size,
-		compressedSize:   blob.size,
-		compressionRatio: file.size / blob.size,
+		compressedSize:   finalBlob.size,
+		compressionRatio: file.size / finalBlob.size,
 		format:           `PDF · ${level} · pdf-lib`,
 	};
 }
 
-// ── Binary search quality for target size ─────────────────────────────────────
+// ── Binary search for target file size ────────────────────────────────────────
 
-async function binarySearchDataUrl(canvas: HTMLCanvasElement, targetBytes: number): Promise<string> {
+async function binarySearchQuality(canvas: HTMLCanvasElement, targetBytes: number): Promise<string> {
 	let lo = 0.1, hi = 0.95, best: string | null = null;
 
 	for (let i = 0; i < 12; i++) {
 		const mid     = (lo + hi) / 2;
 		const dataUrl = canvas.toDataURL('image/jpeg', mid);
-		// Data URL size estimate: base64 is 4/3 of binary
-		const binarySize = Math.round((dataUrl.length - 'data:image/jpeg;base64,'.length) * 3 / 4);
+		// Estimate binary size from base64 length
+		const binSize = Math.round((dataUrl.length - 'data:image/jpeg;base64,'.length) * 3 / 4);
 
-		if (binarySize <= targetBytes) { best = dataUrl; lo = mid; }
+		if (binSize <= targetBytes) { best = dataUrl; lo = mid; }
 		else hi = mid;
 
 		if (hi - lo < 0.008) break;
