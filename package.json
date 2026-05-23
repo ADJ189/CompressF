@@ -21,7 +21,8 @@
 	},
 	"dependencies": {
 		"@sveltejs/adapter-static": "^3.0.10",
-		"pdf-lib": "^1.17.1"
+		"pdf-lib": "^1.17.1",
+		"pdfjs-dist": "^5.7.284"
 	},
 	"overrides": {
 		"cookie": ">=0.7.0"
