@@ -3,15 +3,36 @@
 	<head>
 		<meta charset="utf-8" />
 		<link rel="icon" href="%sveltekit.assets%/favicon.svg" type="image/svg+xml" />
+		<link rel="icon" href="%sveltekit.assets%/favicon.png" type="image/png" />
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
-		<meta name="description" content="Compressly — Fast, private, browser-based file compression for images, PDFs, and video. No uploads, no servers." />
 		<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
 		<meta name="theme-color" content="#111110" media="(prefers-color-scheme: dark)" />
-		<meta property="og:title" content="Compressly" />
-		<meta property="og:description" content="Compress images, PDFs & video in your browser. Private, fast, free." />
+
+		<!-- Default meta — overridden per page via svelte:head -->
+		<meta name="description" content="Compressly — Fast, private, browser-based compression for images, PDFs, video, audio, and GIFs. No upload. No server." />
+		<meta name="keywords" content="compress images, compress PDF, video compressor, audio converter, GIF optimizer, browser, private, no upload" />
+		<meta name="author" content="Compressly" />
+
+		<!-- Open Graph -->
+		<meta property="og:type"        content="website" />
+		<meta property="og:url"         content="https://compressly-9jk.pages.dev/" />
+		<meta property="og:title"       content="Compressly — Browser-native file compression" />
+		<meta property="og:description" content="Compress images, PDFs, video, audio and GIFs privately in your browser. Nothing ever leaves your device." />
+		<meta property="og:image"       content="https://compressly-9jk.pages.dev/og-default.png" />
+
+		<!-- Twitter Card -->
+		<meta name="twitter:card"        content="summary_large_image" />
+		<meta name="twitter:title"       content="Compressly — Browser-native file compression" />
+		<meta name="twitter:description" content="Compress images, PDFs, video, audio and GIFs privately in your browser. No upload. No server." />
+
+		<!-- Canonical -->
+		<link rel="canonical" href="https://compressly-9jk.pages.dev/" />
+
+		<!-- Fonts -->
 		<link rel="preconnect" href="https://fonts.googleapis.com" />
 		<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="" />
 		<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;1,400&family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet" />
+
 		%sveltekit.head%
 	</head>
 	<body data-sveltekit-preload-data="hover">
