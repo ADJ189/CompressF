@@ -1,1 +1,10 @@
-/* /index.html 200
+# Clean short URLs → dedicated compress pages
+/images          /compress/images    301
+/video           /compress/video     301
+/pdf             /compress/pdf       301
+/audio           /compress/audio     301
+/gif             /compress/gif       301
+/docs            /docs               200
+
+# SPA fallback — must be last
+/*               /index.html         200
