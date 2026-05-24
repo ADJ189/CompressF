@@ -108,7 +108,15 @@
 	$: totalSaved = files.filter(f => f.result).reduce((a, f) => a + f.file.size - (f.result?.compressedSize ?? 0), 0);
 </script>
 
-<svelte:head><title>PDF Compressor — Compressly</title></svelte:head>
+<svelte:head>
+	<title>PDF Compressor — Compressly</title>
+	<link rel="icon" href="/logo-pdf.svg" type="image/svg+xml" />
+	<meta name="description" content="Compress PDF files in your browser. Low, Recommended, or Extreme presets. Powered by PDF.js and pdf-lib. No upload." />
+	<meta property="og:title" content="PDF Compressor — Compressly" />
+	<meta property="og:description" content="Compress PDF files privately in your browser. No upload, no server." />
+	<meta property="og:url" content="https://compressly-9jk.pages.dev/compress/pdf" />
+	<link rel="canonical" href="https://compressly-9jk.pages.dev/compress/pdf" />
+</svelte:head>
 
 <div class="page">
 	<div class="page-header">
