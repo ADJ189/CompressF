@@ -48,7 +48,15 @@
 	$: colors = Math.round(16 + (quality / 100) * 240);
 </script>
 
-<svelte:head><title>GIF Optimiser — Compressly</title></svelte:head>
+<svelte:head>
+	<title>GIF Optimiser — Compressly</title>
+	<link rel="icon" href="/logo-gif.svg" type="image/svg+xml" />
+	<meta name="description" content="Optimise GIF files in your browser using two-pass palette generation, or convert to WebM for 70-95% size reduction. No upload." />
+	<meta property="og:title" content="GIF Optimiser — Compressly" />
+	<meta property="og:description" content="Optimise GIFs or convert to WebM. Two-pass palettegen via FFmpeg.wasm. Runs in your browser." />
+	<meta property="og:url" content="https://compressly-9jk.pages.dev/compress/gif" />
+	<link rel="canonical" href="https://compressly-9jk.pages.dev/compress/gif" />
+</svelte:head>
 
 <div class="page">
 	<div class="page-header">
