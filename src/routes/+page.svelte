@@ -25,7 +25,13 @@
 </script>
 
 <svelte:head>
-	<title>Compressly — Browser-based file compression</title>
+	<title>Compressly — Private Browser-Native File Compression</title>
+	<link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+	<meta name="description" content="Compressly — compress images, PDF, video, audio and GIF files privately in your browser. No upload. No server. 100% free." />
+	<meta property="og:title" content="Compressly — Private Browser-Native File Compression" />
+	<meta property="og:description" content="Compress images, PDF, video, audio and GIFs privately. Everything runs in your browser — nothing is ever uploaded." />
+	<meta property="og:url" content="https://compressly-9jk.pages.dev/" />
+	<link rel="canonical" href="https://compressly-9jk.pages.dev/" />
 </svelte:head>
 
 <div class="page">
