@@ -67,7 +67,15 @@
 	$: showBitrate = bitrateOpts[outputFormat].length > 0;
 </script>
 
-<svelte:head><title>Audio Compression — Compressly</title></svelte:head>
+<svelte:head>
+	<title>Audio Compressor — Compressly</title>
+	<link rel="icon" href="/logo-audio.svg" type="image/svg+xml" />
+	<meta name="description" content="Convert and compress audio in your browser. MP3, AAC, OGG, Opus, FLAC, WAV. Also extracts audio from video files. No upload." />
+	<meta property="og:title" content="Audio Compressor — Compressly" />
+	<meta property="og:description" content="Convert audio between MP3, AAC, Opus, FLAC and more. Runs privately in your browser." />
+	<meta property="og:url" content="https://compressly-9jk.pages.dev/compress/audio" />
+	<link rel="canonical" href="https://compressly-9jk.pages.dev/compress/audio" />
+</svelte:head>
 
 <div class="page">
 	<div class="page-header">
