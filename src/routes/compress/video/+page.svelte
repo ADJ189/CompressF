@@ -61,7 +61,15 @@
 	$: crf = Math.round(18 + (1 - crfQuality / 100) * 17);
 </script>
 
-<svelte:head><title>Video Encoder — Compressly</title></svelte:head>
+<svelte:head>
+	<title>Video Compressor — Compressly</title>
+	<link rel="icon" href="/logo-video.svg" type="image/svg+xml" />
+	<meta name="description" content="Compress MP4, WebM, MOV video in your browser using FFmpeg.wasm. H.264, H.265, VP9, AV1. No upload." />
+	<meta property="og:title" content="Video Compressor — Compressly" />
+	<meta property="og:description" content="Compress video privately in your browser. FFmpeg.wasm · H.264 · VP9 · AV1." />
+	<meta property="og:url" content="https://compressly-9jk.pages.dev/compress/video" />
+	<link rel="canonical" href="https://compressly-9jk.pages.dev/compress/video" />
+</svelte:head>
 
 <div class="page">
 	<div class="page-header">
