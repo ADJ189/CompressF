@@ -55,7 +55,15 @@
 	$: formatMismatch = effectiveFormat !== format;
 </script>
 
-<svelte:head><title>Image Compression — Compressly</title></svelte:head>
+<svelte:head>
+	<title>Image Compressor — Compressly</title>
+	<link rel="icon" href="/logo-images.svg" type="image/svg+xml" />
+	<meta name="description" content="Compress JPEG, PNG, WebP, AVIF, HEIC images in your browser. Quality control or exact target size. No upload, no server." />
+	<meta property="og:title" content="Image Compressor — Compressly" />
+	<meta property="og:description" content="Compress JPEG, PNG, WebP, AVIF images privately in your browser." />
+	<meta property="og:url" content="https://compressly-9jk.pages.dev/compress/images" />
+	<link rel="canonical" href="https://compressly-9jk.pages.dev/compress/images" />
+</svelte:head>
 
 <div class="page">
 	<div class="page-header">
