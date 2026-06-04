@@ -77,8 +77,12 @@ export async function optimizeSvg(
 		svg = svg.replace(/<script\b[^>]*(?:\/>|>[\s\S]*?<\/script(?:\s[^>]*)?>)/gi, '');
 	} while (svg !== previousSvg);
 
-	// Remove display:none and visibility:hidden elements entirely
-	svg = svg.replace(/<[^>]+(?:display\s*:\s*none|visibility\s*:\s*hidden)[^>]*(\/?>|[\s\S]*?<\/[a-z]+>)/gi, '');
+	// Remove display:none and visibility:hidden elements entirely (iterative)
+	let previousHiddenSvg: string;
+	do {
+		previousHiddenSvg = svg;
+		svg = svg.replace(/<[^>]+(?:display\s*:\s*none|visibility\s*:\s*hidden)[^>]*(\/?>|[\s\S]*?<\/[a-z]+>)/gi, '');
+	} while (svg !== previousHiddenSvg);
 
 	// 10. Collapse redundant whitespace between tags
 	svg = svg.replace(/>\s{2,}</g, '><');
